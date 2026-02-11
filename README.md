@@ -25,28 +25,29 @@ go get github.com/FrogoAI/lsh
 package main
 
 import (
-"context"
-"github.com/FrogoAI/lsh"
-"github.com/FrogoAI/lsh/repositories/memory"
+	"context"
+	
+	"github.com/FrogoAI/lsh"
+	"github.com/FrogoAI/lsh/repositories/memory"
 )
 
 func main() {
-// 1. Setup Config
-cfg := &lsh.Config{
-Bands:            20,
-Rows:             5,
-ShingleSize:      3,
-JaccardThreshold: 0.6,
-Seed:             13374269,
-}
+	// 1. Setup Config
+	cfg := &lsh.Config{
+		Bands:            20,
+		Rows:             5,
+		ShingleSize:      3,
+		JaccardThreshold: 0.6,
+		Seed:             13374269,
+	}
 
-    // 2. Initialize Service
-    repo := memory.New()
-    service := lsh.NewSimilarityService(repo, cfg)
+	// 2. Initialize Service
+	repo := memory.New()
+	service := lsh.NewSimilarityService(repo, cfg)
 
-    // 3. Upsert a record
-    // Returns "" if it's a new unique record, or the existing ID if it's a duplicate.
-    id, _ := service.Upsert(context.Background(), "users", "John Doe")
+	// 3. Upsert a record
+	// Returns "" if it's a new unique record, or the existing ID if it's a duplicate.
+	id, _ := service.Upsert(context.Background(), "users", "John Doe")
 }
 ```
 
