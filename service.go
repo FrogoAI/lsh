@@ -7,7 +7,6 @@ import (
 
 	"github.com/FrogoAI/lsh/model"
 	"github.com/FrogoAI/lsh/repositories"
-
 	"github.com/FrogoAI/multiproc/worker"
 	"github.com/FrogoAI/set"
 )
@@ -89,7 +88,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 			return "", err
 		}
 
-		members, lenghts, err := s.repo.GetBucketMembers(partitionKey)
+		members, lengths, err := s.repo.GetBucketMembers(partitionKey)
 		if err != nil {
 			return "", err
 		}
@@ -101,7 +100,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		}
 
 		for i, id := range members {
-			cLen := lenghts[i]
+			cLen := lengths[i]
 
 			// Length Filter, we do not care about Jaccard calculation if size too different
 			if cLen < minLen || cLen > maxLen {
@@ -120,10 +119,8 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 			return "", err
 		}
 
-		sourceSet := set.NewGenericDataSet[string](inputTokens...)
-
 		for _, p := range profiles {
-			score := s.CalculateJaccardOptimized(sourceSet, p.Input)
+			score := s.CalculateJaccardOptimized(inputTokens, p.Input)
 			if score >= s.config.JaccardThreshold {
 				return p.ID, nil
 			}
@@ -147,7 +144,8 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 	pool := worker.NewPool(ctx)
 
-	for _, key := range keys {
+	for _, k := range keys {
+		key := k
 		pool.Execute(func(ctx context.Context) error {
 			partitionKey, err := s.GetPartition(group, key)
 			if err != nil {
@@ -162,5 +160,5 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		})
 	}
 
-	return "", pool.Wait()
+	return bid, pool.Wait()
 }

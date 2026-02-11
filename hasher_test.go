@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/FrogoAI/set"
 	"github.com/FrogoAI/testutils"
 	"github.com/cespare/xxhash/v2"
 )
@@ -30,7 +31,7 @@ func TestSig0_Deterministic(t *testing.T) {
 	sig := make([]uint64, 100)
 	tokens := []string{input}
 
-	lsh.ComputeSignature(tokens, sig)
+	lsh.ComputeSignature(set.NewGenericDataSet[string](tokens...), sig)
 
 	if sig[0] != expectedSig0 {
 		t.Fatalf("\nMath Mismatch!\n"+

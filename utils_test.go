@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/FrogoAI/set"
 	"github.com/FrogoAI/testutils"
 )
 
@@ -57,7 +58,7 @@ func TestShingle(t *testing.T) {
 
 			got := service.Shingle(tc.input)
 
-			if !reflect.DeepEqual(got, tc.expected) {
+			if !reflect.DeepEqual(got, set.NewGenericDataSet[string](tc.expected...)) {
 				t.Errorf("\nInput:    %q\nExpected: %v\nGot:      %v", tc.input, tc.expected, got)
 			}
 		})
@@ -67,15 +68,6 @@ func TestShingle(t *testing.T) {
 func TestCalculateJaccardOptimized(t *testing.T) {
 	service := &SimilarityService{
 		config: &Config{ShingleSize: 2},
-	}
-
-	makeSourceSet := func(text string) map[string]struct{} {
-		tokens := service.Shingle(text)
-		set := make(map[string]struct{}, len(tokens))
-		for _, t := range tokens {
-			set[t] = struct{}{}
-		}
-		return set
 	}
 
 	tests := []struct {
@@ -124,7 +116,7 @@ func TestCalculateJaccardOptimized(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sourceSet := makeSourceSet(tc.sourceStr)
+			sourceSet := service.Shingle(tc.sourceStr)
 
 			got := service.CalculateJaccardOptimized(sourceSet, tc.targetStr)
 

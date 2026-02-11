@@ -10,11 +10,14 @@ require (
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/cespare/xxhash/v2 v2.3.0
+	github.com/k0kubun/pp/v3 v3.5.1
 )
 
 require (
 	github.com/FrogoAI/memory v0.0.0-20260120144652-0019f10179f5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mfonda/simhash v0.0.0-20151007195837-79f94a1100d6 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirbu/golang-common v0.0.0-20170403140351-21d4febd4bca // indirect

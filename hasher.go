@@ -6,6 +6,8 @@ import (
 	"strconv"
 
 	"github.com/cespare/xxhash/v2"
+
+	"github.com/FrogoAI/set"
 )
 
 type Hasher struct {
@@ -35,12 +37,12 @@ func NewHasher(bands, rows int, seed int64) *Hasher {
 	return &Hasher{coefficientA: a, coefficientB: b, bands: bands, rows: rows}
 }
 
-func (h *Hasher) ComputeSignature(tokens []string, sig []uint64) {
+func (h *Hasher) ComputeSignature(tokens set.GenericDataSet[string], sig []uint64) {
 	for i := 0; i < SignatureSize; i++ {
 		sig[i] = math.MaxUint64
 	}
 
-	for _, token := range tokens {
+	for token := range tokens {
 		hv := xxhash.Sum64String(token)
 		for i := 0; i < SignatureSize; i++ {
 			// Permutation: (a*h + b) % 2^64

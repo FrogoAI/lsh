@@ -1,65 +1,166 @@
 package aerospike
 
 import (
-	"github.com/FrogoAI/lsh/model"
 	as "github.com/aerospike/aerospike-client-go/v7"
 	"github.com/aerospike/aerospike-client-go/v7/types"
+
+	"github.com/FrogoAI/lsh/model"
+)
+
+const (
+	// Bins
+	binMembers = "m" // Map<UserID, Length>
+	binInput   = "i" // String
+	binGroup   = "g" // String
+
+	// Configuration
+	// This hard limit protects the application from OOMing on massive buckets.
+	// It should be slightly larger than your LSH Config's MaxBucketSize.
+	// If a bucket has more items than this, we return a "stub" to trigger the skip logic.
+	defaultHardLimit = 5000
+
+	// TTL Constants
+	bucketTTL = 14 * 24 * 3600 // 14 Days (Seconds)
+	recordTTL = 90 * 24 * 3600 // 90 Days (Seconds)
 )
 
 type Repository struct {
 	client    *as.Client
 	namespace string
 	set       string
+
+	// Policies
+	writePolicy *as.WritePolicy
+	readPolicy  *as.BasePolicy
+
+	// Safety
+	hardLimit int
 }
 
-const (
-	BinMembers = "m" // List of strings (ID:Length)
-	BinInput   = "i" // Original Input String
-)
-
-func NewRepository(host string, port int, ns, set string) (*Repository, error) {
-	policy := as.NewClientPolicy()
-	policy.ConnectionQueueSize = 100
-	policy.LimitConnectionsToQueueSize = true
-
-	client, err := as.NewClientWithPolicy(policy, host, port)
-	if err != nil {
-		return nil, err
+// NewRepository creates a new Aerospike repository.
+func NewRepository(client *as.Client, namespace, set string, hardLimit int) *Repository {
+	if hardLimit <= 0 {
+		hardLimit = defaultHardLimit
 	}
-	return &Repository{client: client, namespace: ns, set: set}, nil
+
+	wp := as.NewWritePolicy(0, 0)
+	// wp.SendKey = true // Useful for debugging/scans
+
+	return &Repository{
+		client:      client,
+		namespace:   namespace,
+		set:         set,
+		writePolicy: wp,
+		readPolicy:  as.NewPolicy(),
+		hardLimit:   hardLimit,
+	}
 }
 
-func (r *Repository) AddToBucket(bucketKey string, value string) error {
-	key, _ := as.NewKey(r.namespace, r.set, bucketKey)
-	listPolicy := as.NewListPolicy(as.ListOrderUnordered, as.ListWriteFlagsDefault)
-	ops := []*as.Operation{as.ListAppendWithPolicyOp(listPolicy, BinMembers, value)}
-	_, err := r.client.Operate(nil, key, ops...)
+func (r *Repository) AddToBucket(bucketKey string, value string, length int) error {
+	key, err := as.NewKey(r.namespace, r.set, bucketKey)
+	if err != nil {
+		return err
+	}
+
+	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
+
+	op := as.MapPutOp(mapPolicy, binMembers, value, length)
+
+	wp := *r.writePolicy
+	wp.Expiration = bucketTTL
+
+	_, err = r.client.Operate(&wp, key, op)
 	return err
 }
 
-func (r *Repository) GetBucketMembers(bucketKey string) ([]string, error) {
-	key, _ := as.NewKey(r.namespace, r.set, bucketKey)
-	rec, err := r.client.Get(nil, key, BinMembers)
+func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error) {
+	key, err := as.NewKey(r.namespace, r.set, bucketKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// STEP 1: Peek at the Size (Server-Side)
+	// We operate on the 'm' bin to get COUNT, returning an integer.
+	opSize := as.MapSizeOp(binMembers)
+
+	record, err := r.client.Operate(r.writePolicy, key, opSize)
 	if err != nil {
 		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
-			return nil, nil
+			return []string{}, []int{}, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	if raw, ok := rec.Bins[BinMembers].([]interface{}); ok {
-		res := make([]string, len(raw))
-		for i, v := range raw {
-			res[i] = v.(string)
+
+	// Parse Size
+	sizeInt := 0
+	if res, ok := record.Bins[binMembers].(int); ok {
+		sizeInt = res
+	} else {
+		// Edge case: Map is empty or nil
+		return []string{}, []int{}, nil
+	}
+
+	// STEP 2: The Safety Valve (Stub Return)
+	if sizeInt > r.hardLimit {
+		// Optimization: Return a slice of correct LENGTH but empty CONTENT.
+		// The LSH service checks 'if len > MaxBucketSize' and continues.
+		// We save network bandwidth and memory allocation.
+		return make([]string, sizeInt), make([]int, sizeInt), nil
+	}
+
+	// STEP 3: Safe Fetch
+	// The bucket is within limits. Fetch the actual map.
+	fullRecord, err := r.client.Get(r.readPolicy, key, binMembers)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Parse Map (CDT)
+	// Aerospike returns Map bins as map[interface{}]interface{}
+	rawMap, ok := fullRecord.Bins[binMembers].(map[interface{}]interface{})
+	if !ok {
+		return []string{}, []int{}, nil
+	}
+
+	ids := make([]string, 0, len(rawMap))
+	lengths := make([]int, 0, len(rawMap))
+
+	for k, v := range rawMap {
+		if idStr, ok := k.(string); ok {
+			// Handle numeric type variance in Aerospike client
+			var lenVal int
+			switch n := v.(type) {
+			case int:
+				lenVal = n
+			case int64:
+				lenVal = int(n)
+			case float64:
+				lenVal = int(n)
+			}
+			ids = append(ids, idStr)
+			lengths = append(lengths, lenVal)
 		}
-		return res, nil
 	}
-	return nil, nil
+
+	return ids, lengths, nil
 }
 
 func (r *Repository) SaveRecord(u model.Record) error {
-	key, _ := as.NewKey(r.namespace, r.set, u.ID)
-	bins := as.BinMap{BinInput: u.Input}
-	return r.client.Put(nil, key, bins)
+	key, err := as.NewKey(r.namespace, r.set, u.ID)
+	if err != nil {
+		return err
+	}
+
+	bins := as.BinMap{
+		binInput: u.Input,
+		binGroup: u.GroupID,
+	}
+
+	// Copy policy to set specific TTL for records
+	wp := *r.writePolicy
+	wp.Expiration = recordTTL
+
+	return r.client.Put(&wp, key, bins)
 }
 
 func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, error) {
@@ -67,26 +168,45 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 		return map[string]model.Record{}, nil
 	}
 
+	// Prepare Batch Keys
 	keys := make([]*as.Key, len(userIDs))
 	for i, id := range userIDs {
-		keys[i], _ = as.NewKey(r.namespace, r.set, id)
+		k, err := as.NewKey(r.namespace, r.set, id)
+		if err != nil {
+			return nil, err
+		}
+		keys[i] = k
 	}
 
-	records, err := r.client.BatchGet(nil, keys, BinInput)
+	// Execute Batch
+	// nil for binNames means "fetch all bins"
+	records, err := r.client.BatchGet(as.NewBatchPolicy(), keys, binInput, binGroup)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make(map[string]model.Record, len(userIDs))
+	// Map Results
+	results := make(map[string]model.Record, len(userIDs))
+
 	for i, rec := range records {
-		if rec == nil {
-			continue
-		}
-		if input, ok := rec.Bins[BinInput].(string); ok {
-			result[userIDs[i]] = model.Record{ID: userIDs[i], Input: input}
+		if rec != nil {
+			// Safe type assertions
+			input, _ := rec.Bins[binInput].(string)
+			group, _ := rec.Bins[binGroup].(string)
+
+			results[userIDs[i]] = model.Record{
+				ID:      userIDs[i],
+				Input:   input,
+				GroupID: group,
+			}
 		}
 	}
-	return result, nil
+
+	return results, nil
 }
 
-func (r *Repository) Close() { r.client.Close() }
+func (r *Repository) Close() {
+	if r.client != nil {
+		r.client.Close()
+	}
+}

@@ -10,11 +10,11 @@ import (
 	"github.com/FrogoAI/set"
 )
 
-func (s *SimilarityService) Shingle(input string) []string {
+func (s *SimilarityService) Shingle(input string) set.GenericDataSet[string] {
 	input = strings.ToLower(strings.TrimSpace(input))
 
 	if len(input) < s.config.ShingleSize {
-		return []string{input}
+		return set.NewGenericDataSet[string](input)
 	}
 
 	tokenSet := set.NewGenericDataSet[string]()
@@ -25,7 +25,7 @@ func (s *SimilarityService) Shingle(input string) []string {
 		tokenSet.Add(token)
 	}
 
-	return tokenSet.ToSlice()
+	return tokenSet
 }
 
 func (s *SimilarityService) CalculateJaccardOptimized(sourceSet set.GenericDataSet[string], targetStr string) float64 {
@@ -33,9 +33,7 @@ func (s *SimilarityService) CalculateJaccardOptimized(sourceSet set.GenericDataS
 		return 0.0
 	}
 
-	targetTokens := s.Shingle(targetStr)
-
-	targetSet := set.NewGenericDataSet[string](targetTokens...)
+	targetSet := s.Shingle(targetStr)
 
 	intersection := float64(targetSet.Intersection(sourceSet).Count())
 	union := float64(targetSet.Union(sourceSet).Count())
