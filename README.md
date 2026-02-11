@@ -14,13 +14,14 @@ A production-grade Locality Sensitive Hashing (LSH) implementation engineered fo
     🧪 Mathematically Sound: Implements 3-char shingling and MinHash signatures with configurable P=1−(1−sr)b probability curves.
 
 📦 Installation
-Bash
 
+```Bash
 go get github.com/FrogoAI/lsh
+```
 
 🚀 Quick Start
-Go
 
+```Go
 package main
 
 import (
@@ -47,6 +48,7 @@ Seed:             13374269,
     // Returns "" if it's a new unique record, or the existing ID if it's a duplicate.
     id, _ := service.Upsert(context.Background(), "users", "John Doe")
 }
+```
 
 📐 Tuning the LSH Curve
 
