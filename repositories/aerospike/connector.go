@@ -14,11 +14,9 @@ const (
 	binGroup     = "g" // String
 	binSignature = "s" // String
 
-	// Configuration
-	// This hard limit protects the application from OOMing on massive buckets.
 	// It should be slightly larger than your LSH Config's MaxBucketSize.
 	// If a bucket has more items than this, we return a "stub" to trigger the skip logic.
-	defaultHardLimit = 5000
+	defaultHardLimit = 10000
 
 	// TTL Constants
 	bucketTTL = 14 * 24 * 3600 // 14 Days (Seconds)
@@ -79,8 +77,6 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error)
 		return nil, nil, err
 	}
 
-	// STEP 1: Peek at the Size (Server-Side)
-	// We operate on the 'm' bin to get COUNT, returning an integer.
 	opSize := as.MapSizeOp(binMembers)
 
 	record, err := r.client.Operate(r.writePolicy, key, opSize)
@@ -92,32 +88,22 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error)
 		return nil, nil, err
 	}
 
-	// Parse Size
 	sizeInt := 0
 	if res, ok := record.Bins[binMembers].(int); ok {
 		sizeInt = res
 	} else {
-		// Edge case: Map is empty or nil
 		return []string{}, []int{}, nil
 	}
 
-	// STEP 2: The Safety Valve (Stub Return)
 	if sizeInt > r.hardLimit {
-		// Optimization: Return a slice of correct LENGTH but empty CONTENT.
-		// The LSH service checks 'if len > MaxBucketSize' and continues.
-		// We save network bandwidth and memory allocation.
 		return make([]string, sizeInt), make([]int, sizeInt), nil
 	}
 
-	// STEP 3: Safe Fetch
-	// The bucket is within limits. Fetch the actual map.
 	fullRecord, err := r.client.Get(r.readPolicy, key, binMembers)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Parse Map (CDT)
-	// Aerospike returns Map bins as map[interface{}]interface{}
 	rawMap, ok := fullRecord.Bins[binMembers].(map[interface{}]interface{})
 	if !ok {
 		return []string{}, []int{}, nil
@@ -128,7 +114,6 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error)
 
 	for k, v := range rawMap {
 		if idStr, ok := k.(string); ok {
-			// Handle numeric type variance in Aerospike client
 			var lenVal int
 
 			switch n := v.(type) {
@@ -160,7 +145,6 @@ func (r *Repository) SaveRecord(u model.Record) error {
 		binSignature: u.Signature,
 	}
 
-	// Copy policy to set specific TTL for records
 	wp := *r.writePolicy
 	wp.Expiration = recordTTL
 
@@ -172,7 +156,6 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 		return map[string]model.Record{}, nil
 	}
 
-	// Prepare Batch Keys
 	keys := make([]*as.Key, len(userIDs))
 	for i, id := range userIDs {
 		k, err := as.NewKey(r.namespace, r.set, id)
@@ -183,8 +166,6 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 		keys[i] = k
 	}
 
-	// Execute Batch
-	// nil for binNames means "fetch all bins"
 	records, err := r.client.BatchGet(as.NewBatchPolicy(), keys, binInput, binGroup)
 	if err != nil {
 		return nil, err
@@ -229,24 +210,19 @@ func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length
 		return nil
 	}
 
-	// 1. Prepare the operations (same for all records)
 	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
 	op := as.MapPutOp(mapPolicy, binMembers, value, length)
 
-	// 2. Prepare the Batch Records
 	records := make([]as.BatchRecordIfc, len(bucketKeys))
 
-	// Set custom TTL for this batch
 	wp := as.NewBatchWritePolicy()
 	wp.Expiration = bucketTTL
 
 	for i, bKey := range bucketKeys {
 		key, _ := as.NewKey(r.namespace, r.set, bKey)
-		// BatchWrite allows us to perform an 'Operate' on each key
 		records[i] = as.NewBatchWrite(wp, key, op)
 	}
 
-	// 3. Execute all 20 updates in ONE network round-trip
 	err := r.client.BatchOperate(nil, records)
 	if err != nil {
 		return err
@@ -261,7 +237,6 @@ func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, 
 		keys[i], _ = as.NewKey(r.namespace, r.set, k)
 	}
 
-	// Fetch only the members bin for all 20 keys in one trip
 	records, err := r.client.BatchGet(nil, keys, binMembers)
 	if err != nil {
 		return nil, nil, err
