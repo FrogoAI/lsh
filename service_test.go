@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go/v7"
+	as "github.com/aerospike/aerospike-client-go/v8"
 	"github.com/k0kubun/pp/v3"
 
 	"github.com/FrogoAI/lsh/repositories/aerospike"

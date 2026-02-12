@@ -1,8 +1,8 @@
 package aerospike
 
 import (
-	as "github.com/aerospike/aerospike-client-go/v7"
-	"github.com/aerospike/aerospike-client-go/v7/types"
+	as "github.com/aerospike/aerospike-client-go/v8"
+	"github.com/aerospike/aerospike-client-go/v8/types"
 
 	"github.com/FrogoAI/lsh/model"
 )
