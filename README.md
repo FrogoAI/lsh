@@ -46,7 +46,7 @@ func main() {
 	service := lsh.NewSimilarityService(repo, cfg)
 
 	// 3. Upsert a record
-	// Returns "" if it's a new unique record, or the existing ID if it's a duplicate.
+	// Returns a new unique record id, or the existing ID if it's a duplicate.
 	id, _ := service.Upsert(context.Background(), "users", "John Doe")
 }
 ```
