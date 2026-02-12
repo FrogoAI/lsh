@@ -9,9 +9,10 @@ import (
 
 const (
 	// Bins
-	binMembers = "m" // Map<UserID, Length>
-	binInput   = "i" // String
-	binGroup   = "g" // String
+	binMembers   = "m" // Map<UserID, Length>
+	binInput     = "i" // String
+	binGroup     = "g" // String
+	binSignature = "s" // String
 
 	// Configuration
 	// This hard limit protects the application from OOMing on massive buckets.
@@ -29,11 +30,9 @@ type Repository struct {
 	namespace string
 	set       string
 
-	// Policies
 	writePolicy *as.WritePolicy
 	readPolicy  *as.BasePolicy
 
-	// Safety
 	hardLimit int
 }
 
@@ -152,8 +151,9 @@ func (r *Repository) SaveRecord(u model.Record) error {
 	}
 
 	bins := as.BinMap{
-		binInput: u.Input,
-		binGroup: u.GroupID,
+		binInput:     u.Input,
+		binGroup:     u.GroupID,
+		binSignature: u.Signature,
 	}
 
 	// Copy policy to set specific TTL for records
@@ -194,10 +194,17 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 			input, _ := rec.Bins[binInput].(string)
 			group, _ := rec.Bins[binGroup].(string)
 
+			rawSig, _ := rec.Bins[binSignature].([]interface{})
+			sig := make([]uint64, len(rawSig))
+			for i, v := range rawSig {
+				sig[i] = uint64(v.(int64))
+			}
+
 			results[userIDs[i]] = model.Record{
-				ID:      userIDs[i],
-				Input:   input,
-				GroupID: group,
+				ID:        userIDs[i],
+				Input:     input,
+				GroupID:   group,
+				Signature: sig,
 			}
 		}
 	}
@@ -209,4 +216,66 @@ func (r *Repository) Close() {
 	if r.client != nil {
 		r.client.Close()
 	}
+}
+
+func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length int) error {
+	if len(bucketKeys) == 0 {
+		return nil
+	}
+
+	// 1. Prepare the operations (same for all records)
+	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
+	op := as.MapPutOp(mapPolicy, binMembers, value, length)
+
+	// 2. Prepare the Batch Records
+	records := make([]as.BatchRecordIfc, len(bucketKeys))
+
+	// Set custom TTL for this batch
+	wp := as.NewBatchWritePolicy()
+	wp.Expiration = bucketTTL
+
+	for i, bKey := range bucketKeys {
+		key, _ := as.NewKey(r.namespace, r.set, bKey)
+		// BatchWrite allows us to perform an 'Operate' on each key
+		records[i] = as.NewBatchWrite(wp, key, op)
+	}
+
+	// 3. Execute all 20 updates in ONE network round-trip
+	err := r.client.BatchOperate(nil, records)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, map[string][]int, error) {
+	keys := make([]*as.Key, len(bucketKeys))
+	for i, k := range bucketKeys {
+		keys[i], _ = as.NewKey(r.namespace, r.set, k)
+	}
+
+	// Fetch only the members bin for all 20 keys in one trip
+	records, err := r.client.BatchGet(nil, keys, binMembers)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	allMembers := make(map[string][]string)
+	allLens := make(map[string][]int)
+
+	for i, rec := range records {
+		if rec == nil {
+			continue
+		}
+
+		if rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{}); ok {
+			bKey := bucketKeys[i]
+			for id, l := range rawMap {
+				allMembers[bKey] = append(allMembers[bKey], id.(string))
+				allLens[bKey] = append(allLens[bKey], l.(int))
+			}
+		}
+	}
+	return allMembers, allLens, nil
 }

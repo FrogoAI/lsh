@@ -11,6 +11,8 @@ import (
 	"github.com/FrogoAI/set"
 )
 
+const jaccardThreshold = 0.1
+
 var signaturePool = sync.Pool{
 	New: func() interface{} {
 		s := make([]uint64, SignatureSize)
@@ -41,15 +43,6 @@ func (s *SimilarityService) GetNewID() (string, error) {
 	return hex.EncodeToString(id), nil
 }
 
-func (s *SimilarityService) GetPartition(group, key string) (string, error) {
-	prefix, err := s.config.HashVersion(group)
-	if err != nil {
-		return "", err
-	}
-
-	return prefix + ":" + key, nil
-}
-
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
 	// maximum amount of allocation decreased to amount of concurrent processes
 	sigPtr := signaturePool.Get().(*[]uint64)
@@ -76,6 +69,21 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 	candidateSet := set.NewGenericDataSet[string]()
 
+	prefix, err := s.config.HashVersion(group)
+	if err != nil {
+		return "", err
+	}
+
+	bucketKeys := make([]string, len(keys))
+	for i, k := range keys {
+		bucketKeys[i] = prefix + ":" + k
+	}
+
+	allMembers, allLens, err := s.repo.BatchGetBuckets(bucketKeys)
+	if err != nil {
+		return "", err
+	}
+
 	for _, key := range keys {
 		if candidateSet.Count() >= s.config.MaxTotalCandidates {
 			// If we take too many candidates skip selecting more
@@ -83,15 +91,9 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		}
 
 		// we make partition to separate keys by group and unique config hash
-		partitionKey, err := s.GetPartition(group, key)
-		if err != nil {
-			return "", err
-		}
+		partitionKey := prefix + ":" + key
 
-		members, lengths, err := s.repo.GetBucketMembers(partitionKey)
-		if err != nil {
-			return "", err
-		}
+		members, lengths := allMembers[partitionKey], allLens[partitionKey]
 
 		if len(members) > s.config.MaxBucketSize {
 			// That can cause decreasing of accuracy, but if bucket contains a
@@ -120,6 +122,12 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		}
 
 		for _, p := range profiles {
+			estJaccard := EstimateJaccard(sig, p.Signature)
+
+			if estJaccard < (s.config.JaccardThreshold - jaccardThreshold) {
+				continue // Skip expensive text processing for this candidate
+			}
+
 			score := s.CalculateJaccardOptimized(inputTokens, p.Input)
 			if score >= s.config.JaccardThreshold {
 				return p.ID, nil
@@ -133,32 +141,25 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return "", err
 	}
 
-	err = s.repo.SaveRecord(model.Record{
-		ID:      bid,
-		Input:   input,
-		GroupID: group,
-	})
-	if err != nil {
-		return "", err
-	}
-
 	pool := worker.NewPool(ctx)
 
-	for _, k := range keys {
-		key := k
-		pool.Execute(func(ctx context.Context) error {
-			partitionKey, err := s.GetPartition(group, key)
-			if err != nil {
-				return err
-			}
-
-			if err := s.repo.AddToBucket(partitionKey, bid, inputLen); err != nil {
-				return err
-			}
-
-			return nil
+	pool.Execute(func(ctx context.Context) error {
+		return s.repo.SaveRecord(model.Record{
+			ID:        bid,
+			Input:     input,
+			GroupID:   group,
+			Signature: sig,
 		})
-	}
+	})
+
+	pool.Execute(func(ctx context.Context) error {
+		partitionedKeys := make([]string, len(keys))
+		for i, k := range keys {
+			partitionedKeys[i] = prefix + ":" + k
+		}
+
+		return s.repo.BatchAddToBuckets(partitionedKeys, bid, inputLen)
+	})
 
 	return bid, pool.Wait()
 }

@@ -7,5 +7,7 @@ type Storage interface {
 	GetBucketMembers(bucketKey string) ([]string, []int, error)
 	SaveRecord(u model.Record) error
 	GetRecords(userIDs []string) (map[string]model.Record, error)
+	BatchAddToBuckets(bucketKeys []string, value string, length int) error
+	BatchGetBuckets(bucketKeys []string) (map[string][]string, map[string][]int, error)
 	Close()
 }

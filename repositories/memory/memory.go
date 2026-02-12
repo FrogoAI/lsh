@@ -70,3 +70,37 @@ func (r *Repository) GetRecords(ids []string) (map[string]model.Record, error) {
 }
 
 func (r *Repository) Close() {}
+
+func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length int) error {
+	for _, k := range bucketKeys {
+		err := r.AddToBucket(k, value, length)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, map[string][]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	buckets := make(map[string][]string)
+	sizes := make(map[string][]int)
+
+	for _, k := range bucketKeys {
+		v := r.buckets[k]
+
+		out := make([]string, len(v))
+		copy(out, v)
+
+		outL := make([]int, len(v))
+		copy(outL, r.lens[k])
+
+		buckets[k] = out
+		sizes[k] = outL
+	}
+
+	return buckets, sizes, nil
+}

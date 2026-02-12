@@ -61,3 +61,18 @@ func GetTinyID() ([]byte, error) {
 
 	return []byte(big.NewInt(int64(val)).Text(62))[5:], nil //nolint:mnd
 }
+
+func EstimateJaccard(sig1, sig2 []uint64) float64 {
+	if len(sig1) == 0 || len(sig1) != len(sig2) {
+		return 0.0
+	}
+
+	matches := 0
+	for i := range sig1 {
+		if sig1[i] == sig2[i] {
+			matches++
+		}
+	}
+
+	return float64(matches) / float64(len(sig1))
+}
