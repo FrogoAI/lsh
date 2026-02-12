@@ -18,11 +18,13 @@ func TestSig0_Deterministic(t *testing.T) {
 
 	lsh := NewHasher(bands, rows, seed)
 
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewSource(seed)) // nolint:gosec
+
 	valA := r.Uint64()
 	if valA%2 == 0 {
 		valA++
 	}
+
 	expectedA := valA
 	expectedB := r.Uint64()
 
@@ -67,6 +69,7 @@ func TestComputeBands_TableDriven(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unexpected error: %v", err)
 				}
+
 				if len(res) != 3 {
 					t.Errorf("Expected 3 band keys, got %d", len(res))
 				}
@@ -100,7 +103,7 @@ func TestComputeBands_TableDriven(t *testing.T) {
 		{
 			name:      "Edge Case: Short Signature (Error Expected)",
 			signature: []uint64{1, 2, 3},
-			check: func(t *testing.T, res []string, err error) {
+			check: func(t *testing.T, _ []string, err error) {
 				testutils.Equal(t, err, ErrSignatureTooShort)
 			},
 		},

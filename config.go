@@ -4,9 +4,10 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/FrogoAI/packer"
 	"github.com/caarlos0/env/v10"
 	"github.com/cespare/xxhash/v2"
+
+	"github.com/FrogoAI/packer"
 )
 
 const (

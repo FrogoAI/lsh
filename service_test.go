@@ -40,7 +40,6 @@ func TestUpserEmail(t *testing.T) {
 	id4, err := service.Upsert(ctx, "email", "maxem@weavers.teams")
 	testutils.Equal(t, err, nil)
 	testutils.Equal(t, id, id4)
-
 }
 
 func TestUpsert(t *testing.T) {
@@ -107,7 +106,8 @@ func TestAerospike(t *testing.T) {
 	st := time.Now()
 	_, err = service.Upsert(ctx, "users", "test1@gmail.com")
 	testutils.Equal(t, err, nil)
-	fmt.Println(time.Now().Sub(st))
+
+	pp.Println(time.Since(st))
 }
 
 // BenchmarkUpsert measures the performance of the Upsert operation.
@@ -135,6 +135,7 @@ func BenchmarkUpsert(b *testing.B) {
 
 	b.Run("NewRecord", func(b *testing.B) {
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			// Using a changing string to ensure it's always a "New" insert
 			input := fmt.Sprintf("bench_new_%d@example.com", i)
@@ -148,6 +149,7 @@ func BenchmarkUpsert(b *testing.B) {
 		_, _ = service.Upsert(ctx, "users", target)
 
 		b.ResetTimer()
+
 		for i := 0; i < b.N; i++ {
 			// Constant string to trigger the LSH match logic
 			_, _ = service.Upsert(ctx, "users", target)

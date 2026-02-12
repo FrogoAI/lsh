@@ -68,6 +68,7 @@ func EstimateJaccard(sig1, sig2 []uint64) float64 {
 	}
 
 	matches := 0
+
 	for i := range sig1 {
 		if sig1[i] == sig2[i] {
 			matches++

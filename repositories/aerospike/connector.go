@@ -69,6 +69,7 @@ func (r *Repository) AddToBucket(bucketKey string, value string, length int) err
 	wp.Expiration = bucketTTL
 
 	_, err = r.client.Operate(&wp, key, op)
+
 	return err
 }
 
@@ -87,6 +88,7 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error)
 		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
 			return []string{}, []int{}, nil
 		}
+
 		return nil, nil, err
 	}
 
@@ -128,6 +130,7 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error)
 		if idStr, ok := k.(string); ok {
 			// Handle numeric type variance in Aerospike client
 			var lenVal int
+
 			switch n := v.(type) {
 			case int:
 				lenVal = n
@@ -136,6 +139,7 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error)
 			case float64:
 				lenVal = int(n)
 			}
+
 			ids = append(ids, idStr)
 			lengths = append(lengths, lenVal)
 		}
@@ -175,6 +179,7 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 		if err != nil {
 			return nil, err
 		}
+
 		keys[i] = k
 	}
 
@@ -195,6 +200,7 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 			group, _ := rec.Bins[binGroup].(string)
 
 			rawSig, _ := rec.Bins[binSignature].([]interface{})
+
 			sig := make([]uint64, len(rawSig))
 			for i, v := range rawSig {
 				sig[i] = uint64(v.(int64))
@@ -277,5 +283,6 @@ func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, 
 			}
 		}
 	}
+
 	return allMembers, allLens, nil
 }

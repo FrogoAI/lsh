@@ -20,7 +20,7 @@ type Hasher struct {
 }
 
 func NewHasher(bands, rows int, seed int64) *Hasher {
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewSource(seed)) // nolint:gosec
 
 	sigSize := bands * rows
 
@@ -32,6 +32,7 @@ func NewHasher(bands, rows int, seed int64) *Hasher {
 		if val%2 == 0 {
 			val++ // we must have only odd values for next step
 		}
+
 		a[i] = val
 
 		b[i] = r.Uint64()
@@ -65,26 +66,33 @@ func (h *Hasher) ComputeBands(signature []uint64) ([]string, error) {
 	}
 
 	bucketKeys := make([]string, h.bands)
-	buf := make([]byte, h.rows*8) // Reusable buffer
+
+	// reusable buffer
+	buf := make([]byte, h.rows*8) // nolint:mnd
 
 	for i := 0; i < h.bands; i++ {
 		start := i * h.rows
 
 		offset := 0
+
 		for k := 0; k < h.rows; k++ {
 			val := signature[start+k]
+
+			// zero allocation little endian
 			buf[offset] = byte(val)
-			buf[offset+1] = byte(val >> 8)
-			buf[offset+2] = byte(val >> 16)
-			buf[offset+3] = byte(val >> 24)
-			buf[offset+4] = byte(val >> 32)
-			buf[offset+5] = byte(val >> 40)
-			buf[offset+6] = byte(val >> 48)
-			buf[offset+7] = byte(val >> 56)
-			offset += 8
+			buf[offset+1] = byte(val >> 8)  // nolint:mnd
+			buf[offset+2] = byte(val >> 16) // nolint:mnd
+			buf[offset+3] = byte(val >> 24) // nolint:mnd
+			buf[offset+4] = byte(val >> 32) // nolint:mnd
+			buf[offset+5] = byte(val >> 40) // nolint:mnd
+			buf[offset+6] = byte(val >> 48) // nolint:mnd
+			buf[offset+7] = byte(val >> 56) // nolint:mnd
+
+			offset += 8 // nolint:mnd
 		}
 
 		d := xxhash.New()
+
 		_, err := d.Write(buf)
 		if err != nil {
 			return nil, err

@@ -52,6 +52,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	// maximum amount of allocation decreased to amount of concurrent processes
 	sigPtr := s.signaturePool.Get().(*[]uint64)
 	defer s.signaturePool.Put(sigPtr)
+
 	sig := *sigPtr
 
 	inputTokens := s.Shingle(input)
@@ -148,7 +149,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 	pool := worker.NewPool(ctx)
 
-	pool.Execute(func(ctx context.Context) error {
+	pool.Execute(func(_ context.Context) error {
 		return s.repo.SaveRecord(model.Record{
 			ID:        bid,
 			Input:     input,
@@ -157,7 +158,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		})
 	})
 
-	pool.Execute(func(ctx context.Context) error {
+	pool.Execute(func(_ context.Context) error {
 		partitionedKeys := make([]string, len(keys))
 		for i, k := range keys {
 			partitionedKeys[i] = prefix + ":" + k

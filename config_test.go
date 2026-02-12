@@ -29,7 +29,7 @@ func TestHashVersion_TableDriven(t *testing.T) {
 	}{
 		{
 			name:     "Determinism: No Changes",
-			modifier: func(c *Config) {}, // Do nothing
+			modifier: func(_ *Config) {}, // Do nothing
 			expected: baseHash,
 		},
 		{

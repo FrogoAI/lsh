@@ -21,12 +21,13 @@ func NewRepository() *Repository {
 	}
 }
 
-func (r *Repository) AddToBucket(k string, v string, len int) error {
+func (r *Repository) AddToBucket(k string, v string, l int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.buckets[k] = append(r.buckets[k], v)
-	r.lens[k] = append(r.lens[k], len)
+	r.lens[k] = append(r.lens[k], l)
+
 	return nil
 }
 
@@ -52,6 +53,7 @@ func (r *Repository) SaveRecord(u model.Record) error {
 	defer r.mu.Unlock()
 
 	r.profiles[u.ID] = u
+
 	return nil
 }
 
@@ -60,6 +62,7 @@ func (r *Repository) GetRecords(ids []string) (map[string]model.Record, error) {
 	defer r.mu.RUnlock()
 
 	res := make(map[string]model.Record)
+
 	for _, id := range ids {
 		if p, ok := r.profiles[id]; ok {
 			res[id] = p
