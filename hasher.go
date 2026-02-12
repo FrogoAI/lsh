@@ -14,17 +14,20 @@ type Hasher struct {
 	coefficientA []uint64
 	coefficientB []uint64
 
-	bands int
-	rows  int
+	bands   int
+	rows    int
+	sigSize int
 }
 
 func NewHasher(bands, rows int, seed int64) *Hasher {
 	r := rand.New(rand.NewSource(seed))
 
-	a := make([]uint64, SignatureSize)
-	b := make([]uint64, SignatureSize)
+	sigSize := bands * rows
 
-	for i := 0; i < SignatureSize; i++ {
+	a := make([]uint64, sigSize)
+	b := make([]uint64, sigSize)
+
+	for i := 0; i < sigSize; i++ {
 		val := r.Uint64()
 		if val%2 == 0 {
 			val++ // we must have only odd values for next step
@@ -34,17 +37,17 @@ func NewHasher(bands, rows int, seed int64) *Hasher {
 		b[i] = r.Uint64()
 	}
 
-	return &Hasher{coefficientA: a, coefficientB: b, bands: bands, rows: rows}
+	return &Hasher{coefficientA: a, coefficientB: b, bands: bands, rows: rows, sigSize: sigSize}
 }
 
 func (h *Hasher) ComputeSignature(tokens set.GenericDataSet[string], sig []uint64) {
-	for i := 0; i < SignatureSize; i++ {
+	for i := 0; i < h.sigSize; i++ {
 		sig[i] = math.MaxUint64
 	}
 
 	for token := range tokens {
 		hv := xxhash.Sum64String(token)
-		for i := 0; i < SignatureSize; i++ {
+		for i := 0; i < h.sigSize; i++ {
 			// Permutation: (a*h + b) % 2^64
 			// Since we ensured 'a' is odd, this is mathematically correct.
 			ph := h.coefficientA[i]*hv + h.coefficientB[i]
@@ -57,7 +60,7 @@ func (h *Hasher) ComputeSignature(tokens set.GenericDataSet[string], sig []uint6
 }
 
 func (h *Hasher) ComputeBands(signature []uint64) ([]string, error) {
-	if len(signature) < h.bands*h.rows {
+	if len(signature) < h.sigSize {
 		return nil, ErrSignatureTooShort
 	}
 

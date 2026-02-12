@@ -4,9 +4,10 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/cespare/xxhash/v2"
+
 	"github.com/FrogoAI/set"
 	"github.com/FrogoAI/testutils"
-	"github.com/cespare/xxhash/v2"
 )
 
 func TestSig0_Deterministic(t *testing.T) {
@@ -52,7 +53,7 @@ func TestSig0_Deterministic(t *testing.T) {
 func TestComputeBands_TableDriven(t *testing.T) {
 	bands := 3
 	rows := 2
-	hasher := &Hasher{bands: bands, rows: rows}
+	hasher := &Hasher{bands: bands, rows: rows, sigSize: bands * rows}
 
 	testcases := []struct {
 		name      string

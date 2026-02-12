@@ -11,7 +11,7 @@ import (
 )
 
 func (s *SimilarityService) Shingle(input string) set.GenericDataSet[string] {
-	input = strings.ToLower(strings.TrimSpace(input))
+	input = "^" + strings.ToLower(strings.TrimSpace(input)) + "$"
 
 	if len(input) < s.config.ShingleSize {
 		return set.NewGenericDataSet[string](input)

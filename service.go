@@ -13,25 +13,30 @@ import (
 
 const jaccardThreshold = 0.1
 
-var signaturePool = sync.Pool{
-	New: func() interface{} {
-		s := make([]uint64, SignatureSize)
-		return &s
-	},
-}
-
 type SimilarityService struct {
-	hasher *Hasher
-	repo   repositories.Storage
-	config *Config
+	hasher        *Hasher
+	repo          repositories.Storage
+	config        *Config
+	signaturePool *sync.Pool
 }
 
 func NewSimilarityService(repo repositories.Storage, config *Config) *SimilarityService {
-	return &SimilarityService{
+	sigSize := config.Bands * config.Rows
+
+	svc := &SimilarityService{
 		hasher: NewHasher(config.Bands, config.Rows, config.Seed),
 		repo:   repo,
 		config: config,
+		signaturePool: &sync.Pool{
+			New: func() interface{} {
+				// Allocate EXACTLY what Bands * Rows needs
+				slice := make([]uint64, sigSize)
+				return &slice
+			},
+		},
 	}
+
+	return svc
 }
 
 func (s *SimilarityService) GetNewID() (string, error) {
@@ -45,8 +50,8 @@ func (s *SimilarityService) GetNewID() (string, error) {
 
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
 	// maximum amount of allocation decreased to amount of concurrent processes
-	sigPtr := signaturePool.Get().(*[]uint64)
-	defer signaturePool.Put(sigPtr)
+	sigPtr := s.signaturePool.Get().(*[]uint64)
+	defer s.signaturePool.Put(sigPtr)
 	sig := *sigPtr
 
 	inputTokens := s.Shingle(input)

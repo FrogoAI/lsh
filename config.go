@@ -10,13 +10,11 @@ import (
 )
 
 const (
-	SignatureSize int = 100
-
 	EnvPrefix = "LSH"
 )
 
 type Config struct {
-	Bands              int     `env:"_BANDS" envDefault:"20"`
+	Bands              int     `env:"_BANDS" envDefault:"40"`
 	Rows               int     `env:"_ROWS" envDefault:"5"`
 	ShingleSize        int     `env:"_SHINGLE_SIZE" envDefault:"3"`
 	JaccardThreshold   float64 `env:"_JAC_THRESHOLD" envDefault:"0.6"`

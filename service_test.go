@@ -15,6 +15,34 @@ import (
 	"github.com/FrogoAI/testutils"
 )
 
+func TestUpserEmail(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+
+	cfg, err := GetLSHConfigFromEnv()
+	testutils.Equal(t, err, nil)
+
+	service := NewSimilarityService(repo, cfg)
+
+	id, err := service.Upsert(ctx, "email", "maxim@weavers.team")
+	testutils.Equal(t, err, nil)
+
+	pp.Println(id)
+
+	id2, err := service.Upsert(ctx, "email", "maxim@weavets.team")
+	testutils.Equal(t, err, nil)
+	testutils.Equal(t, id, id2)
+
+	id3, err := service.Upsert(ctx, "email", "maxim@weavers.teams")
+	testutils.Equal(t, err, nil)
+	testutils.Equal(t, id, id3)
+
+	id4, err := service.Upsert(ctx, "email", "maxem@weavers.teams")
+	testutils.Equal(t, err, nil)
+	testutils.Equal(t, id, id4)
+
+}
+
 func TestUpsert(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
