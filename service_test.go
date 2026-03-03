@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,6 +156,111 @@ func BenchmarkUpsert(b *testing.B) {
 			_, _ = service.Upsert(ctx, "users", target)
 		}
 	})
+}
+
+func TestUpsert_DeterministicID_Optimization(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+	cfg, err := GetLSHConfigFromEnv()
+	testutils.Equal(t, err, nil)
+
+	service := NewSimilarityService(repo, cfg)
+
+	input := "optimization_test_input"
+
+	// First Upsert
+	id1, err := service.Upsert(ctx, "test_group", input)
+	testutils.Equal(t, err, nil)
+
+	// Second Upsert (should hit optimization and return same ID)
+	id2, err := service.Upsert(ctx, "test_group", input)
+	testutils.Equal(t, err, nil)
+
+	testutils.Equal(t, id1, id2)
+}
+
+func TestUpsert_Concurrency_SignatureIntegrity(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+
+	cfg := &Config{
+		Bands:              20,
+		Rows:               5,
+		ShingleSize:        3,
+		JaccardThreshold:   0.9,
+		MaxBucketSize:      100,
+		MaxTotalCandidates: 100,
+		Seed:               42,
+	}
+
+	service := NewSimilarityService(repo, cfg)
+
+	count := 100
+	ids := make([]string, count)
+	inputs := make([]string, count)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// Use a unique suffix to ensure we are creating new records
+			input := fmt.Sprintf("concurrent_test_input_%d_unique_suffix", idx)
+			id, err := service.Upsert(ctx, "concurrency_group", input)
+			if err != nil {
+				t.Errorf("Upsert failed: %v", err)
+				return
+			}
+
+			mu.Lock()
+			ids[idx] = id
+			inputs[idx] = input
+			mu.Unlock()
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify signatures
+	records, err := repo.GetRecords(ids)
+	if err != nil {
+		t.Fatalf("Failed to get records: %v", err)
+	}
+
+	hasher := NewHasher(cfg.Bands, cfg.Rows, cfg.Seed)
+	sigSize := cfg.Bands * cfg.Rows
+
+	for i, id := range ids {
+		rec, ok := records[id]
+		if !ok {
+			t.Errorf("Record not found for id: %s (index %d)", id, i)
+			continue
+		}
+
+		if rec.Input != inputs[i] {
+			t.Errorf("Input mismatch for id %s. Got %s, want %s", id, rec.Input, inputs[i])
+		}
+
+		// Re-compute signature to verify the stored signature is correct and wasn't corrupted
+		// by race conditions in the pool usage.
+		tokens := service.Shingle(inputs[i])
+		expectedSig := make([]uint64, sigSize)
+		hasher.ComputeSignature(tokens, expectedSig)
+
+		if len(rec.Signature) != len(expectedSig) {
+			t.Errorf("Signature length mismatch for input %s", inputs[i])
+			continue
+		}
+
+		for j := range expectedSig {
+			if rec.Signature[j] != expectedSig[j] {
+				t.Errorf("Signature mismatch at index %d for input '%s'. Possible pool corruption.", j, inputs[i])
+				break
+			}
+		}
+	}
 }
 
 // BenchmarkFastSimilarityMath compares signature estimation vs raw jaccard

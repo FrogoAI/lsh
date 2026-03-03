@@ -2,7 +2,8 @@ package lsh
 
 import (
 	"context"
-	"encoding/hex"
+	"crypto/sha256"
+	"encoding/base64"
 	"sync"
 
 	"github.com/FrogoAI/lsh/model"
@@ -38,16 +39,27 @@ func NewSimilarityService(repo repositories.Storage, config *Config) *Similarity
 	return svc
 }
 
-func (s *SimilarityService) GetNewID() (string, error) {
-	id, err := GetTinyID()
+func (s *SimilarityService) GetNewID(input string) (string, error) {
+	hash := sha256.Sum256([]byte(input))
+
+	return base64.RawURLEncoding.EncodeToString(hash[:16]), nil
+}
+
+func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
+	bid, err := s.GetNewID(input)
 	if err != nil {
 		return "", err
 	}
 
-	return hex.EncodeToString(id), nil
-}
+	existing, err := s.repo.GetRecords([]string{bid})
+	if err != nil {
+		return "", err
+	}
 
-func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
+	if _, ok := existing[bid]; ok {
+		return bid, nil
+	}
+
 	// maximum amount of allocation decreased to amount of concurrent processes
 	sig := s.signaturePool.Get().([]uint64)
 	defer s.signaturePool.Put(sig)
@@ -139,10 +151,6 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	}
 
 	// If we not found bucket, we create new one
-	bid, err := s.GetNewID()
-	if err != nil {
-		return "", err
-	}
 
 	pool := worker.NewPool(ctx)
 
