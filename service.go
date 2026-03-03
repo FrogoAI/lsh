@@ -31,7 +31,8 @@ func NewSimilarityService(repo repositories.Storage, config *Config) *Similarity
 		signaturePool: &sync.Pool{
 			New: func() interface{} {
 				// Allocate EXACTLY what Bands * Rows needs
-				return make([]uint64, sigSize)
+				slice := make([]uint64, sigSize)
+				return &slice
 			},
 		},
 	}
@@ -61,8 +62,10 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	}
 
 	// maximum amount of allocation decreased to amount of concurrent processes
-	sig := s.signaturePool.Get().([]uint64)
-	defer s.signaturePool.Put(sig)
+	sigPtr := s.signaturePool.Get().(*[]uint64)
+	defer s.signaturePool.Put(sigPtr)
+
+	sig := *sigPtr
 
 	inputTokens := s.Shingle(input)
 

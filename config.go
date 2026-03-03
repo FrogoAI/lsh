@@ -2,6 +2,7 @@ package lsh
 
 import (
 	"encoding/hex"
+	"math"
 	"strings"
 
 	"github.com/caarlos0/env/v10"
@@ -18,7 +19,7 @@ type Config struct {
 	Bands              int     `env:"_BANDS" envDefault:"40"`
 	Rows               int     `env:"_ROWS" envDefault:"5"`
 	ShingleSize        int     `env:"_SHINGLE_SIZE" envDefault:"3"`
-	JaccardThreshold   float64 `env:"_JAC_THRESHOLD" envDefault:"0.6"` // Replace by auto calculation based on Bands and Rows.
+	JaccardThreshold   float64 `env:"_JAC_THRESHOLD" envDefault:"0.6"`
 	MaxBucketSize      int     `env:"_MAX_BUCKET_SIZE" envDefault:"200"`
 	MaxTotalCandidates int     `env:"_MAX_TOTAL_CANDIDATES" envDefault:"100"`
 	Seed               int64   `env:"_SEED" envDefault:"13374269"`
@@ -35,6 +36,17 @@ func GetLSHConfigFromEnv() (*Config, error) {
 	}
 
 	return c, err
+}
+
+// CalculateApproximateThreshold computes the approximate Jaccard similarity threshold
+// at which the LSH configuration (Bands and Rows) is most sensitive.
+// This is the point where the probability of two items being hashed to the same
+// bucket begins to rise sharply. The formula is s ≈ (1/B)^(1/R).
+func (c *Config) CalculateApproximateThreshold() float64 {
+	if c.Bands <= 0 || c.Rows <= 0 {
+		return 0.0
+	}
+	return math.Pow(1.0/float64(c.Bands), 1.0/float64(c.Rows))
 }
 
 func (c *Config) HashVersion(group string) (string, error) {

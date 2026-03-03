@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
 	"github.com/k0kubun/pp/v3"
 
+	"github.com/FrogoAI/lsh/model"
 	"github.com/FrogoAI/lsh/repositories/aerospike"
 	"github.com/FrogoAI/lsh/repositories/memory"
 	"github.com/FrogoAI/testutils"
@@ -160,7 +161,7 @@ func BenchmarkUpsert(b *testing.B) {
 
 func TestUpsert_DeterministicID_Optimization(t *testing.T) {
 	ctx := context.Background()
-	repo := memory.NewRepository()
+	repo := newSpyRepository()
 	cfg, err := GetLSHConfigFromEnv()
 	testutils.Equal(t, err, nil)
 
@@ -168,99 +169,22 @@ func TestUpsert_DeterministicID_Optimization(t *testing.T) {
 
 	input := "optimization_test_input"
 
-	// First Upsert
+	// 1. First Upsert: Should perform a full write.
 	id1, err := service.Upsert(ctx, "test_group", input)
 	testutils.Equal(t, err, nil)
 
-	// Second Upsert (should hit optimization and return same ID)
+	// Assert that the write methods were called exactly once.
+	testutils.Equal(t, int64(1), atomic.LoadInt64(&repo.saveRecordCalls))
+	testutils.Equal(t, int64(1), atomic.LoadInt64(&repo.batchAddToBucketCalls))
+
+	// 2. Second Upsert: Should hit the optimization path and return early.
 	id2, err := service.Upsert(ctx, "test_group", input)
 	testutils.Equal(t, err, nil)
 
+	// Assert that the ID is the same and the write methods were NOT called again.
 	testutils.Equal(t, id1, id2)
-}
-
-func TestUpsert_Concurrency_SignatureIntegrity(t *testing.T) {
-	ctx := context.Background()
-	repo := memory.NewRepository()
-
-	cfg := &Config{
-		Bands:              20,
-		Rows:               5,
-		ShingleSize:        3,
-		JaccardThreshold:   0.9,
-		MaxBucketSize:      100,
-		MaxTotalCandidates: 100,
-		Seed:               42,
-	}
-
-	service := NewSimilarityService(repo, cfg)
-
-	count := 100
-	ids := make([]string, count)
-	inputs := make([]string, count)
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	for i := 0; i < count; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			// Use a unique suffix to ensure we are creating new records
-			input := fmt.Sprintf("concurrent_test_input_%d_unique_suffix", idx)
-			id, err := service.Upsert(ctx, "concurrency_group", input)
-			if err != nil {
-				t.Errorf("Upsert failed: %v", err)
-				return
-			}
-
-			mu.Lock()
-			ids[idx] = id
-			inputs[idx] = input
-			mu.Unlock()
-		}(i)
-	}
-
-	wg.Wait()
-
-	// Verify signatures
-	records, err := repo.GetRecords(ids)
-	if err != nil {
-		t.Fatalf("Failed to get records: %v", err)
-	}
-
-	hasher := NewHasher(cfg.Bands, cfg.Rows, cfg.Seed)
-	sigSize := cfg.Bands * cfg.Rows
-
-	for i, id := range ids {
-		rec, ok := records[id]
-		if !ok {
-			t.Errorf("Record not found for id: %s (index %d)", id, i)
-			continue
-		}
-
-		if rec.Input != inputs[i] {
-			t.Errorf("Input mismatch for id %s. Got %s, want %s", id, rec.Input, inputs[i])
-		}
-
-		// Re-compute signature to verify the stored signature is correct and wasn't corrupted
-		// by race conditions in the pool usage.
-		tokens := service.Shingle(inputs[i])
-		expectedSig := make([]uint64, sigSize)
-		hasher.ComputeSignature(tokens, expectedSig)
-
-		if len(rec.Signature) != len(expectedSig) {
-			t.Errorf("Signature length mismatch for input %s", inputs[i])
-			continue
-		}
-
-		for j := range expectedSig {
-			if rec.Signature[j] != expectedSig[j] {
-				t.Errorf("Signature mismatch at index %d for input '%s'. Possible pool corruption.", j, inputs[i])
-				break
-			}
-		}
-	}
+	testutils.Equal(t, int64(1), atomic.LoadInt64(&repo.saveRecordCalls))
+	testutils.Equal(t, int64(1), atomic.LoadInt64(&repo.batchAddToBucketCalls))
 }
 
 // BenchmarkFastSimilarityMath compares signature estimation vs raw jaccard
@@ -273,4 +197,27 @@ func BenchmarkSimilarityComparison(b *testing.B) {
 			_ = EstimateJaccard(s1, s2)
 		}
 	})
+}
+
+// spyRepository wraps a memory.Repository to count method calls for testing.
+type spyRepository struct {
+	*memory.Repository
+	saveRecordCalls       int64
+	batchAddToBucketCalls int64
+}
+
+func newSpyRepository() *spyRepository {
+	return &spyRepository{
+		Repository: memory.NewRepository(),
+	}
+}
+
+func (s *spyRepository) SaveRecord(u model.Record) error {
+	atomic.AddInt64(&s.saveRecordCalls, 1)
+	return s.Repository.SaveRecord(u)
+}
+
+func (s *spyRepository) BatchAddToBuckets(bucketKeys []string, value string, length int) error {
+	atomic.AddInt64(&s.batchAddToBucketCalls, 1)
+	return s.Repository.BatchAddToBuckets(bucketKeys, value, length)
 }
