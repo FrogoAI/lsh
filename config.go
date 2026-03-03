@@ -15,6 +15,8 @@ const (
 	EnvPrefix = "LSH"
 )
 
+/*
+ */
 type Config struct {
 	Bands              int     `env:"_BANDS" envDefault:"40"`
 	Rows               int     `env:"_ROWS" envDefault:"5"`
@@ -46,6 +48,7 @@ func (c *Config) CalculateApproximateThreshold() float64 {
 	if c.Bands <= 0 || c.Rows <= 0 {
 		return 0.0
 	}
+
 	return math.Pow(1.0/float64(c.Bands), 1.0/float64(c.Rows))
 }
 
