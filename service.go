@@ -2,10 +2,8 @@ package lsh
 
 import (
 	"context"
-	"strconv"
+	"encoding/hex"
 	"sync"
-
-	"github.com/mfonda/simhash"
 
 	"github.com/FrogoAI/lsh/model"
 	"github.com/FrogoAI/lsh/repositories"
@@ -32,8 +30,7 @@ func NewSimilarityService(repo repositories.Storage, config *Config) *Similarity
 		signaturePool: &sync.Pool{
 			New: func() interface{} {
 				// Allocate EXACTLY what Bands * Rows needs
-				slice := make([]uint64, sigSize)
-				return &slice
+				return make([]uint64, sigSize)
 			},
 		},
 	}
@@ -41,19 +38,19 @@ func NewSimilarityService(repo repositories.Storage, config *Config) *Similarity
 	return svc
 }
 
-func (s *SimilarityService) GetNewID(input string) (string, error) {
-	value := simhash.Simhash(simhash.NewWordFeatureSet([]byte(input)))
-	hexString := strconv.FormatUint(value, 16)
+func (s *SimilarityService) GetNewID() (string, error) {
+	id, err := GetTinyID()
+	if err != nil {
+		return "", err
+	}
 
-	return hexString, nil
+	return hex.EncodeToString(id), nil
 }
 
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
 	// maximum amount of allocation decreased to amount of concurrent processes
-	sigPtr := s.signaturePool.Get().(*[]uint64)
-	defer s.signaturePool.Put(sigPtr)
-
-	sig := *sigPtr
+	sig := s.signaturePool.Get().([]uint64)
+	defer s.signaturePool.Put(sig)
 
 	inputTokens := s.Shingle(input)
 
@@ -142,7 +139,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	}
 
 	// If we not found bucket, we create new one
-	bid, err := s.GetNewID(input)
+	bid, err := s.GetNewID()
 	if err != nil {
 		return "", err
 	}
@@ -150,11 +147,14 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	pool := worker.NewPool(ctx)
 
 	pool.Execute(func(_ context.Context) error {
+		sigCopy := make([]uint64, len(sig))
+		copy(sigCopy, sig)
+
 		return s.repo.SaveRecord(model.Record{
 			ID:        bid,
 			Input:     input,
 			GroupID:   group,
-			Signature: sig,
+			Signature: sigCopy,
 		})
 	})
 

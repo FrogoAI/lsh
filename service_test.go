@@ -15,7 +15,7 @@ import (
 	"github.com/FrogoAI/testutils"
 )
 
-func TestUpserEmail(t *testing.T) {
+func TestUpsertEmail(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
 
