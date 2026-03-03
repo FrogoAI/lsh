@@ -18,7 +18,7 @@ type Config struct {
 	Bands              int     `env:"_BANDS" envDefault:"40"`
 	Rows               int     `env:"_ROWS" envDefault:"5"`
 	ShingleSize        int     `env:"_SHINGLE_SIZE" envDefault:"3"`
-	JaccardThreshold   float64 `env:"_JAC_THRESHOLD" envDefault:"0.6"`
+	JaccardThreshold   float64 `env:"_JAC_THRESHOLD" envDefault:"0.6"` // Replace by auto calculation based on Bands and Rows.
 	MaxBucketSize      int     `env:"_MAX_BUCKET_SIZE" envDefault:"200"`
 	MaxTotalCandidates int     `env:"_MAX_TOTAL_CANDIDATES" envDefault:"100"`
 	Seed               int64   `env:"_SEED" envDefault:"13374269"`

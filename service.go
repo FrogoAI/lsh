@@ -2,8 +2,10 @@ package lsh
 
 import (
 	"context"
-	"encoding/hex"
+	"strconv"
 	"sync"
+
+	"github.com/mfonda/simhash"
 
 	"github.com/FrogoAI/lsh/model"
 	"github.com/FrogoAI/lsh/repositories"
@@ -39,13 +41,11 @@ func NewSimilarityService(repo repositories.Storage, config *Config) *Similarity
 	return svc
 }
 
-func (s *SimilarityService) GetNewID() (string, error) {
-	id, err := GetTinyID()
-	if err != nil {
-		return "", err
-	}
+func (s *SimilarityService) GetNewID(input string) (string, error) {
+	value := simhash.Simhash(simhash.NewWordFeatureSet([]byte(input)))
+	hexString := strconv.FormatUint(value, 16)
 
-	return hex.EncodeToString(id), nil
+	return hexString, nil
 }
 
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
@@ -142,7 +142,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	}
 
 	// If we not found bucket, we create new one
-	bid, err := s.GetNewID()
+	bid, err := s.GetNewID(input)
 	if err != nil {
 		return "", err
 	}
