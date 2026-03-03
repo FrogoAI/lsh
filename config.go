@@ -16,7 +16,27 @@ const (
 )
 
 /*
- */
+Config defines the parameters for the LSH (Locality-Sensitive Hashing) pipeline.
+
+- Bands and Rows control how MinHash signatures are split into band keys:
+
+  - signature size = Bands * Rows
+
+  - increasing Bands (with fixed Rows) generally increases recall: more chances for
+    similar items to land in at least one common bucket.
+
+  - increasing Rows (with fixed Bands) generally increases precision: a stricter
+    requirement to match within a band.
+
+    Together they define an *approximate* similarity level where collisions become likely
+    (often estimated as s ≈ (1/Bands)^(1/Rows)). This is a probabilistic candidate generator.
+
+  - JaccardThreshold is the final similarity filter used after candidate generation.
+    We intentionally keep the LSH bucketing stage “looser” (i.e., allowing candidates at a
+    lower similarity) so that *similar* items are saved/located via similar buckets.
+    Then JaccardThreshold decides whether a candidate is “similar enough” to return the
+    same ID or should be treated as different (new) ID.
+*/
 type Config struct {
 	Bands              int     `env:"_BANDS" envDefault:"40"`
 	Rows               int     `env:"_ROWS" envDefault:"5"`
