@@ -148,13 +148,15 @@ func BenchmarkUpsert(b *testing.B) {
 	b.Run("DuplicateMatch", func(b *testing.B) {
 		// Ensure the target exists
 		target := "duplicate@example.com"
-		_, _ = service.Upsert(ctx, "users", target)
+		_, err := service.Upsert(ctx, "users", target)
+		testutils.Equal(b, err, nil)
 
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
 			// Constant string to trigger the LSH match logic
-			_, _ = service.Upsert(ctx, "users", target)
+			_, err = service.Upsert(ctx, "users", target)
+			testutils.Equal(b, err, nil)
 		}
 	})
 }
