@@ -25,6 +25,7 @@ type SimilarityService struct {
 	signaturePool *sync.Pool
 	groupLocks    [groupLockShards]sync.Mutex
 	prefixCache   sync.Map // group string -> prefix string
+	resolvedCache sync.Map // bid (string) -> resolved bid (string)
 }
 
 func NewSimilarityService(repo repositories.Storage, config *Config) *SimilarityService {
@@ -93,6 +94,20 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 	if _, ok := existing[bid]; ok {
 		return bid, nil
+	}
+
+	// L1: in-memory cache (per-pod, instant)
+	if resolved, ok := s.resolvedCache.Load(bid); ok {
+		return resolved.(string), nil
+	}
+
+	// L2: persistent cache (shared across pods, survives restarts)
+	if resolved, err := s.repo.GetResolvedID(bid); err != nil {
+		return "", err
+	} else if resolved != "" {
+		s.resolvedCache.Store(bid, resolved)
+
+		return resolved, nil
 	}
 
 	s.lockGroup(group)
@@ -184,6 +199,9 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 			score := s.CalculateJaccardOptimized(inputTokens, p.Input)
 			if score >= s.config.JaccardThreshold {
+				s.resolvedCache.Store(bid, p.ID)
+				_ = s.repo.SaveResolvedID(bid, p.ID)
+
 				return p.ID, nil
 			}
 		}

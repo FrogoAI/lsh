@@ -210,6 +210,64 @@ func TestGetRecords(t *testing.T) {
 	}
 }
 
+func TestResolvedID(t *testing.T) {
+	cases := []struct {
+		name   string
+		setup  func(r *Repository)
+		bid    string
+		wantID string
+	}{
+		{
+			name:   "not found returns empty",
+			setup:  func(_ *Repository) {},
+			bid:    "missing",
+			wantID: "",
+		},
+		{
+			name: "found returns resolved",
+			setup: func(r *Repository) {
+				r.resolved["abc"] = "xyz"
+			},
+			bid:    "abc",
+			wantID: "xyz",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := NewRepository()
+			tc.setup(repo)
+
+			got, err := repo.GetResolvedID(tc.bid)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got != tc.wantID {
+				t.Fatalf("got %q, want %q", got, tc.wantID)
+			}
+		})
+	}
+}
+
+func TestSaveResolvedID(t *testing.T) {
+	repo := NewRepository()
+
+	err := repo.SaveResolvedID("bid1", "resolved1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := repo.GetResolvedID("bid1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got != "resolved1" {
+		t.Fatalf("got %q, want %q", got, "resolved1")
+	}
+}
+
 func TestClose(_ *testing.T) {
 	repo := NewRepository()
 	repo.Close() // should not panic

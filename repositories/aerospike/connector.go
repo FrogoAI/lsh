@@ -9,10 +9,11 @@ import (
 
 const (
 	// Bins
-	binMembers   = "m" // Map<UserID, Length>
-	binInput     = "i" // String
-	binGroup     = "g" // String
-	binSignature = "s" // String
+	binMembers    = "m" // Map<UserID, Length>
+	binInput      = "i" // String
+	binGroup      = "g" // String
+	binSignature  = "s" // String
+	binResolvedID = "r" // String (resolved bid cache)
 
 	// It should be slightly larger than your LSH Config's MaxBucketSize.
 	// If a bucket has more items than this, we return a "stub" to trigger the skip logic.
@@ -204,6 +205,40 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 	}
 
 	return results, nil
+}
+
+func (r *Repository) SaveResolvedID(bid string, resolvedBid string) error {
+	key, err := as.NewKey(r.namespace, r.set, "res:"+bid)
+	if err != nil {
+		return err
+	}
+
+	wp := *r.writePolicy
+	wp.Expiration = recordTTL
+
+	return r.client.Put(&wp, key, as.BinMap{binResolvedID: resolvedBid})
+}
+
+func (r *Repository) GetResolvedID(bid string) (string, error) {
+	key, err := as.NewKey(r.namespace, r.set, "res:"+bid)
+	if err != nil {
+		return "", err
+	}
+
+	rec, err := r.client.Get(r.readPolicy, key, binResolvedID)
+	if err != nil {
+		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
+			return "", nil
+		}
+
+		return "", err
+	}
+
+	if resolved, ok := rec.Bins[binResolvedID].(string); ok {
+		return resolved, nil
+	}
+
+	return "", nil
 }
 
 func (r *Repository) Close() {

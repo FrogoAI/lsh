@@ -11,6 +11,7 @@ type Repository struct {
 	buckets  map[string][]string
 	lens     map[string][]int
 	profiles map[string]model.Record
+	resolved map[string]string
 }
 
 func NewRepository() *Repository {
@@ -18,6 +19,7 @@ func NewRepository() *Repository {
 		buckets:  make(map[string][]string),
 		lens:     make(map[string][]int),
 		profiles: make(map[string]model.Record),
+		resolved: make(map[string]string),
 	}
 }
 
@@ -70,6 +72,26 @@ func (r *Repository) GetRecords(ids []string) (map[string]model.Record, error) {
 	}
 
 	return res, nil
+}
+
+func (r *Repository) SaveResolvedID(bid string, resolvedBid string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.resolved[bid] = resolvedBid
+
+	return nil
+}
+
+func (r *Repository) GetResolvedID(bid string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if v, ok := r.resolved[bid]; ok {
+		return v, nil
+	}
+
+	return "", nil
 }
 
 func (r *Repository) Close() {}

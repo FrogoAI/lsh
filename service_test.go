@@ -163,6 +163,94 @@ func TestUpsert_MaxBucketSizeSkip(t *testing.T) {
 	}
 }
 
+func TestUpsert_ResolvedCache(t *testing.T) {
+	ctx := context.Background()
+	repo := newSpyRepository()
+	cfg := &Config{
+		Bands: 40, Rows: 5, ShingleSize: 3,
+		JaccardThreshold: 0.6, MaxBucketSize: 200,
+		MaxTotalCandidates: 100, Seed: 13374269,
+	}
+	svc := NewSimilarityService(repo, cfg)
+
+	cases := []struct {
+		name               string
+		input              string
+		wantID             string
+		wantBatchGetBucket int64
+	}{
+		{name: "original input", input: "maxim@weavers.team"},
+		{name: "similar input (1st call, full LSH)", input: "maxim@weavets.team"},
+		{name: "similar input (2nd call, cache hit)", input: "maxim@weavets.team"},
+		{name: "similar input (3rd call, cache hit)", input: "maxim@weavets.team"},
+	}
+
+	// Insert original
+	originalID, err := svc.Upsert(ctx, "email", cases[0].input)
+	testutils.Equal(t, err, nil)
+
+	batchCallsAfterInsert := atomic.LoadInt64(&repo.batchGetBucketCalls)
+
+	for _, tc := range cases[1:] {
+		t.Run(tc.name, func(t *testing.T) {
+			before := atomic.LoadInt64(&repo.batchGetBucketCalls)
+
+			id, err := svc.Upsert(ctx, "email", tc.input)
+			testutils.Equal(t, err, nil)
+			testutils.Equal(t, originalID, id)
+
+			after := atomic.LoadInt64(&repo.batchGetBucketCalls)
+
+			_ = batchCallsAfterInsert
+
+			t.Logf("BatchGetBuckets calls: before=%d after=%d (delta=%d)", before, after, after-before)
+		})
+	}
+
+	// The 1st similar call does full LSH (1 BatchGetBuckets call).
+	// The 2nd and 3rd similar calls hit the resolved cache (0 BatchGetBuckets calls).
+	// Total: 1 call for original insert + 1 for first similar = 2 after insert
+	totalBatchGets := atomic.LoadInt64(&repo.batchGetBucketCalls)
+	expectedBatchGets := batchCallsAfterInsert + 1 // only 1 extra for the first similar input
+
+	testutils.Equal(t, expectedBatchGets, totalBatchGets)
+}
+
+func TestUpsert_L2CacheSurvivesPodRestart(t *testing.T) {
+	ctx := context.Background()
+	repo := newSpyRepository()
+	cfg := &Config{
+		Bands: 40, Rows: 5, ShingleSize: 3,
+		JaccardThreshold: 0.6, MaxBucketSize: 200,
+		MaxTotalCandidates: 100, Seed: 13374269,
+	}
+
+	// Pod 1: insert original + resolve similar
+	svc1 := NewSimilarityService(repo, cfg)
+
+	originalID, err := svc1.Upsert(ctx, "email", "maxim@weavers.team")
+	testutils.Equal(t, err, nil)
+
+	id, err := svc1.Upsert(ctx, "email", "maxim@weavets.team")
+	testutils.Equal(t, err, nil)
+	testutils.Equal(t, originalID, id)
+
+	// Simulate pod restart: new service instance, same repo (Aerospike persists)
+	svc2 := NewSimilarityService(repo, cfg)
+
+	batchGetBefore := atomic.LoadInt64(&repo.batchGetBucketCalls)
+
+	// Should hit L2 (repo) cache, not run full LSH
+	id2, err := svc2.Upsert(ctx, "email", "maxim@weavets.team")
+	testutils.Equal(t, err, nil)
+	testutils.Equal(t, originalID, id2)
+
+	batchGetAfter := atomic.LoadInt64(&repo.batchGetBucketCalls)
+
+	// No BatchGetBuckets calls — L2 cache hit, no LSH pipeline
+	testutils.Equal(t, batchGetBefore, batchGetAfter)
+}
+
 // BenchmarkUpsert measures the performance of the Upsert operation.
 // We test two scenarios:
 // 1. New Record (Insertion cost)
@@ -205,8 +293,27 @@ func BenchmarkUpsert(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			// Constant string to trigger the LSH match logic
+			// Constant string to trigger the exact match fast path
 			_, err = service.Upsert(ctx, "users", target)
+			testutils.Equal(b, err, nil)
+		}
+	})
+
+	b.Run("SimilarMatch", func(b *testing.B) {
+		// Ensure the original exists
+		_, err := service.Upsert(ctx, "users", "similar_original@example.com")
+		testutils.Equal(b, err, nil)
+
+		// First call resolves via LSH and populates the cache
+		similar := "similar_originak@example.com"
+		_, err = service.Upsert(ctx, "users", similar)
+		testutils.Equal(b, err, nil)
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			// Hits the resolved cache — no LSH pipeline
+			_, err = service.Upsert(ctx, "users", similar)
 			testutils.Equal(b, err, nil)
 		}
 	})
@@ -257,6 +364,7 @@ type spyRepository struct {
 	*memory.Repository
 	saveRecordCalls       int64
 	batchAddToBucketCalls int64
+	batchGetBucketCalls   int64
 }
 
 func newSpyRepository() *spyRepository {
@@ -273,4 +381,17 @@ func (s *spyRepository) SaveRecord(u model.Record) error {
 func (s *spyRepository) BatchAddToBuckets(bucketKeys []string, value string, length int) error {
 	atomic.AddInt64(&s.batchAddToBucketCalls, 1)
 	return s.Repository.BatchAddToBuckets(bucketKeys, value, length)
+}
+
+func (s *spyRepository) BatchGetBuckets(keys []string) (map[string][]string, map[string][]int, error) {
+	atomic.AddInt64(&s.batchGetBucketCalls, 1)
+	return s.Repository.BatchGetBuckets(keys)
+}
+
+func (s *spyRepository) SaveResolvedID(bid string, resolvedBid string) error {
+	return s.Repository.SaveResolvedID(bid, resolvedBid)
+}
+
+func (s *spyRepository) GetResolvedID(bid string) (string, error) {
+	return s.Repository.GetResolvedID(bid)
 }
