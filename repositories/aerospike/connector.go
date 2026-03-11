@@ -268,6 +268,7 @@ func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, 
 
 		if rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{}); ok {
 			bKey := bucketKeys[i]
+
 			for id, l := range rawMap {
 				idStr, ok := id.(string)
 				if !ok {
