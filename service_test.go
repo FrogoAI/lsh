@@ -112,6 +112,57 @@ func TestAerospike(t *testing.T) {
 	pp.Println(time.Since(st))
 }
 
+func TestUpsert_EdgeCases(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		group   string
+		input   string
+		wantErr error
+	}{
+		{name: "empty input", group: "g", input: "", wantErr: ErrEmptyInputString},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := memory.NewRepository()
+			cfg := &Config{
+				Bands: 20, Rows: 5, ShingleSize: 5,
+				JaccardThreshold: 0.6, MaxBucketSize: 200,
+				MaxTotalCandidates: 100, Seed: 42,
+			}
+			svc := NewSimilarityService(repo, cfg)
+
+			_, err := svc.Upsert(ctx, tc.group, tc.input)
+			testutils.Equal(t, err, tc.wantErr)
+		})
+	}
+}
+
+func TestUpsert_MaxBucketSizeSkip(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+	cfg := &Config{
+		Bands: 5, Rows: 2, ShingleSize: 3,
+		JaccardThreshold: 0.6, MaxBucketSize: 2,
+		MaxTotalCandidates: 100, Seed: 42,
+	}
+	svc := NewSimilarityService(repo, cfg)
+
+	for i := 0; i < 10; i++ {
+		_, err := svc.Upsert(ctx, "grp", "user"+strconv.Itoa(i)+"@example.com")
+		testutils.Equal(t, err, nil)
+	}
+
+	id, err := svc.Upsert(ctx, "grp", "completely_different_string_xyz")
+	testutils.Equal(t, err, nil)
+
+	if id == "" {
+		t.Fatal("expected non-empty id")
+	}
+}
+
 // BenchmarkUpsert measures the performance of the Upsert operation.
 // We test two scenarios:
 // 1. New Record (Insertion cost)

@@ -6,6 +6,34 @@ import (
 	"github.com/FrogoAI/testutils"
 )
 
+func TestCalculateApproximateThreshold(t *testing.T) {
+	cases := []struct {
+		name  string
+		bands int
+		rows  int
+		want  float64
+	}{
+		{name: "standard config", bands: 20, rows: 5, want: 0.5493},
+		{name: "single band single row", bands: 1, rows: 1, want: 1.0},
+		{name: "zero bands", bands: 0, rows: 5, want: 0.0},
+		{name: "zero rows", bands: 5, rows: 0, want: 0.0},
+		{name: "both zero", bands: 0, rows: 0, want: 0.0},
+		{name: "negative bands", bands: -1, rows: 5, want: 0.0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{Bands: tc.bands, Rows: tc.rows}
+			got := cfg.CalculateApproximateThreshold()
+
+			diff := got - tc.want
+			if diff < -0.001 || diff > 0.001 {
+				t.Errorf("got %f, want ~%f", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHashVersion_TableDriven(t *testing.T) {
 	baseConfig := Config{
 		Bands:              20,

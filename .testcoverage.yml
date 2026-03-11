@@ -23,7 +23,7 @@ threshold:
 
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
-  total: 44
+  total: 70
 
 # Holds regexp rules which will override thresholds for matched files or packages
 # using their paths.
@@ -46,6 +46,7 @@ exclude:
     - _easyjson\.go$  # excludes all easyjson generated files
     - /mocks/         # excludes all mocks generated files
     - /examples/      # excludes examples
+    - repositories/aerospike   # excludes aerospike (requires external infrastructure)
 
 # File name of go-test-coverage breakdown file, which can be used to
 # analyze coverage difference.

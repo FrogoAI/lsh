@@ -67,8 +67,9 @@ func (h *Hasher) ComputeBands(signature []uint64) ([]string, error) {
 
 	bucketKeys := make([]string, h.bands)
 
-	// reusable buffer
+	// reusable buffer and hasher
 	buf := make([]byte, h.rows*8) // nolint:mnd
+	d := xxhash.New()
 
 	for i := 0; i < h.bands; i++ {
 		start := i * h.rows
@@ -91,7 +92,7 @@ func (h *Hasher) ComputeBands(signature []uint64) ([]string, error) {
 			offset += 8 // nolint:mnd
 		}
 
-		d := xxhash.New()
+		d.Reset()
 
 		_, err := d.Write(buf)
 		if err != nil {

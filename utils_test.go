@@ -65,6 +65,31 @@ func TestShingle(t *testing.T) {
 	}
 }
 
+func TestEstimateJaccard(t *testing.T) {
+	cases := []struct {
+		name string
+		sig1 []uint64
+		sig2 []uint64
+		want float64
+	}{
+		{name: "identical", sig1: []uint64{1, 2, 3}, sig2: []uint64{1, 2, 3}, want: 1.0},
+		{name: "no match", sig1: []uint64{1, 2, 3}, sig2: []uint64{4, 5, 6}, want: 0.0},
+		{name: "partial match", sig1: []uint64{1, 2, 3, 4}, sig2: []uint64{1, 2, 5, 6}, want: 0.5},
+		{name: "empty slices", sig1: []uint64{}, sig2: []uint64{}, want: 0.0},
+		{name: "different lengths", sig1: []uint64{1, 2}, sig2: []uint64{1}, want: 0.0},
+		{name: "nil sig1", sig1: nil, sig2: []uint64{1}, want: 0.0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EstimateJaccard(tc.sig1, tc.sig2)
+			if got != tc.want {
+				t.Errorf("got %f, want %f", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCalculateJaccardOptimized(t *testing.T) {
 	service := &SimilarityService{
 		config: &Config{ShingleSize: 2},

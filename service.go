@@ -24,6 +24,7 @@ type SimilarityService struct {
 	config        *Config
 	signaturePool *sync.Pool
 	groupLocks    [groupLockShards]sync.Mutex
+	prefixCache   sync.Map // group string -> prefix string
 }
 
 func NewSimilarityService(repo repositories.Storage, config *Config) *SimilarityService {
@@ -45,10 +46,25 @@ func NewSimilarityService(repo repositories.Storage, config *Config) *Similarity
 	return svc
 }
 
-func (s *SimilarityService) GetNewID(input string) (string, error) {
+func (s *SimilarityService) GetNewID(input string) string {
 	hash := sha256.Sum256([]byte(input))
 
-	return base64.RawURLEncoding.EncodeToString(hash[:16]), nil
+	return base64.RawURLEncoding.EncodeToString(hash[:16])
+}
+
+func (s *SimilarityService) getPrefix(group string) (string, error) {
+	if v, ok := s.prefixCache.Load(group); ok {
+		return v.(string), nil
+	}
+
+	prefix, err := s.config.HashVersion(group)
+	if err != nil {
+		return "", err
+	}
+
+	s.prefixCache.Store(group, prefix)
+
+	return prefix, nil
 }
 
 func (s *SimilarityService) lockGroup(group string) {
@@ -68,10 +84,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return "", ErrEmptyInputString
 	}
 
-	bid, err := s.GetNewID(input)
-	if err != nil {
-		return "", err
-	}
+	bid := s.GetNewID(input)
 
 	existing, err := s.repo.GetRecords([]string{bid})
 	if err != nil {
@@ -109,9 +122,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return "", err
 	}
 
-	candidateSet := set.NewGenericDataSet[string]()
-
-	prefix, err := s.config.HashVersion(group)
+	prefix, err := s.getPrefix(group)
 	if err != nil {
 		return "", err
 	}
@@ -126,27 +137,22 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return "", err
 	}
 
-	for _, key := range keys {
+	candidateSet := set.NewGenericDataSet[string]()
+
+	for _, bk := range bucketKeys {
 		if candidateSet.Count() >= s.config.MaxTotalCandidates {
-			// If we take too many candidates skip selecting more
 			break
 		}
 
-		// we make partition to separate keys by group and unique config hash
-		partitionKey := prefix + ":" + key
-
-		members, lengths := allMembers[partitionKey], allLens[partitionKey]
+		members, lengths := allMembers[bk], allLens[bk]
 
 		if len(members) > s.config.MaxBucketSize {
-			// That can cause decreasing of accuracy, but if bucket contains a
-			// lot of records (hot bucket), we must skip it
 			continue
 		}
 
 		for i, id := range members {
 			cLen := lengths[i]
 
-			// Length Filter, we do not care about Jaccard calculation if size too different
 			if cLen < minLen || cLen > maxLen {
 				continue
 			}
@@ -163,11 +169,17 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 			return "", err
 		}
 
-		for _, p := range profiles {
+		// Iterate in deterministic order to ensure consistent results
+		for _, id := range ids {
+			p, ok := profiles[id]
+			if !ok {
+				continue
+			}
+
 			estJaccard := EstimateJaccard(sig, p.Signature)
 
 			if estJaccard < (s.config.JaccardThreshold - jaccardThreshold) {
-				continue // Skip expensive text processing for this candidate
+				continue
 			}
 
 			score := s.CalculateJaccardOptimized(inputTokens, p.Input)
@@ -176,8 +188,6 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 			}
 		}
 	}
-
-	// If we not found bucket, we create new one
 
 	pool := worker.NewPool(ctx)
 
@@ -194,12 +204,7 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	})
 
 	pool.Execute(func(_ context.Context) error {
-		partitionedKeys := make([]string, len(keys))
-		for i, k := range keys {
-			partitionedKeys[i] = prefix + ":" + k
-		}
-
-		return s.repo.BatchAddToBuckets(partitionedKeys, bid, inputLen)
+		return s.repo.BatchAddToBuckets(bucketKeys, bid, inputLen)
 	})
 
 	return bid, pool.Wait()
