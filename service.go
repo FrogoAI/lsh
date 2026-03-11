@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"hash/fnv"
 	"sync"
 
 	"github.com/FrogoAI/lsh/model"
@@ -12,13 +13,17 @@ import (
 	"github.com/FrogoAI/set"
 )
 
-const jaccardThreshold = 0.1
+const (
+	jaccardThreshold = 0.1
+	groupLockShards  = 64
+)
 
 type SimilarityService struct {
 	hasher        *Hasher
 	repo          repositories.Storage
 	config        *Config
 	signaturePool *sync.Pool
+	groupLocks    [groupLockShards]sync.Mutex
 }
 
 func NewSimilarityService(repo repositories.Storage, config *Config) *SimilarityService {
@@ -46,6 +51,18 @@ func (s *SimilarityService) GetNewID(input string) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(hash[:16]), nil
 }
 
+func (s *SimilarityService) lockGroup(group string) {
+	h := fnv.New32a()
+	h.Write([]byte(group)) //nolint:errcheck
+	s.groupLocks[h.Sum32()%groupLockShards].Lock()
+}
+
+func (s *SimilarityService) unlockGroup(group string) {
+	h := fnv.New32a()
+	h.Write([]byte(group)) //nolint:errcheck
+	s.groupLocks[h.Sum32()%groupLockShards].Unlock()
+}
+
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
 	if input == "" {
 		return "", ErrEmptyInputString
@@ -64,6 +81,9 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 	if _, ok := existing[bid]; ok {
 		return bid, nil
 	}
+
+	s.lockGroup(group)
+	defer s.unlockGroup(group)
 
 	// maximum amount of allocation decreased to amount of concurrent processes
 	sigPtr := s.signaturePool.Get().(*[]uint64)
