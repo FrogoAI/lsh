@@ -1,11 +1,7 @@
 package lsh
 
 import (
-	"crypto/rand"
-	"encoding/binary"
-	"math/big"
 	"strings"
-	"time"
 
 	"github.com/FrogoAI/set"
 )
@@ -13,14 +9,15 @@ import (
 func (s *SimilarityService) Shingle(input string) set.GenericDataSet[string] {
 	input = "^" + strings.ToLower(strings.TrimSpace(input)) + "$"
 
-	if len(input) < s.config.ShingleSize {
+	runes := []rune(input)
+	if len(runes) < s.config.ShingleSize {
 		return set.NewGenericDataSet[string](input)
 	}
 
 	tokenSet := set.NewGenericDataSet[string]()
 
-	for i := 0; i <= len(input)-s.config.ShingleSize; i++ {
-		token := input[i : i+s.config.ShingleSize]
+	for i := 0; i <= len(runes)-s.config.ShingleSize; i++ {
+		token := string(runes[i : i+s.config.ShingleSize])
 
 		tokenSet.Add(token)
 	}
@@ -43,23 +40,6 @@ func (s *SimilarityService) CalculateJaccardOptimized(sourceSet set.GenericDataS
 	}
 
 	return intersection / union
-}
-
-func GetTinyID() ([]byte, error) {
-	b := make([]byte, 4) //nolint:mnd
-
-	_, err := rand.Read(b) //nolint:gosec
-	if err != nil {
-		return nil, err
-	}
-
-	r := make([]byte, 4) //nolint:mnd
-	// time.Now().UnixNano()
-	binary.BigEndian.PutUint32(r, uint32(time.Now().Nanosecond()))
-	b = append(b, r...)
-	val := binary.BigEndian.Uint64(b)
-
-	return []byte(big.NewInt(int64(val)).Text(62))[5:], nil //nolint:mnd
 }
 
 func EstimateJaccard(sig1, sig2 []uint64) float64 {

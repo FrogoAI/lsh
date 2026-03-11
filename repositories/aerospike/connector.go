@@ -166,7 +166,7 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 		keys[i] = k
 	}
 
-	records, err := r.client.BatchGet(as.NewBatchPolicy(), keys, binInput, binGroup)
+	records, err := r.client.BatchGet(as.NewBatchPolicy(), keys, binInput, binGroup, binSignature)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,14 @@ func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, erro
 
 			sig := make([]uint64, len(rawSig))
 			for i, v := range rawSig {
-				sig[i] = uint64(v.(int64))
+				switch n := v.(type) {
+				case int:
+					sig[i] = uint64(n)
+				case int64:
+					sig[i] = uint64(n)
+				case float64:
+					sig[i] = uint64(n)
+				}
 			}
 
 			results[userIDs[i]] = model.Record{
@@ -219,7 +226,11 @@ func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length
 	wp.Expiration = bucketTTL
 
 	for i, bKey := range bucketKeys {
-		key, _ := as.NewKey(r.namespace, r.set, bKey)
+		key, err := as.NewKey(r.namespace, r.set, bKey)
+		if err != nil {
+			return err
+		}
+
 		records[i] = as.NewBatchWrite(wp, key, op)
 	}
 
@@ -234,7 +245,12 @@ func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length
 func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, map[string][]int, error) {
 	keys := make([]*as.Key, len(bucketKeys))
 	for i, k := range bucketKeys {
-		keys[i], _ = as.NewKey(r.namespace, r.set, k)
+		key, err := as.NewKey(r.namespace, r.set, k)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		keys[i] = key
 	}
 
 	records, err := r.client.BatchGet(nil, keys, binMembers)
@@ -253,8 +269,24 @@ func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, 
 		if rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{}); ok {
 			bKey := bucketKeys[i]
 			for id, l := range rawMap {
-				allMembers[bKey] = append(allMembers[bKey], id.(string))
-				allLens[bKey] = append(allLens[bKey], l.(int))
+				idStr, ok := id.(string)
+				if !ok {
+					continue
+				}
+
+				var lenVal int
+
+				switch n := l.(type) {
+				case int:
+					lenVal = n
+				case int64:
+					lenVal = int(n)
+				case float64:
+					lenVal = int(n)
+				}
+
+				allMembers[bKey] = append(allMembers[bKey], idStr)
+				allLens[bKey] = append(allLens[bKey], lenVal)
 			}
 		}
 	}

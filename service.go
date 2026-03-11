@@ -47,6 +47,10 @@ func (s *SimilarityService) GetNewID(input string) (string, error) {
 }
 
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
+	if input == "" {
+		return "", ErrEmptyInputString
+	}
+
 	bid, err := s.GetNewID(input)
 	if err != nil {
 		return "", err
