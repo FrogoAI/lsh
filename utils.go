@@ -26,20 +26,28 @@ func (s *SimilarityService) Shingle(input string) set.GenericDataSet[string] {
 }
 
 func (s *SimilarityService) CalculateJaccardOptimized(sourceSet set.GenericDataSet[string], targetStr string) float64 {
-	if sourceSet.Count() == 0 {
+	sourceCount := sourceSet.Count()
+	if sourceCount == 0 {
 		return 0.0
 	}
 
 	targetSet := s.Shingle(targetStr)
 
-	intersection := float64(targetSet.Intersection(sourceSet).Count())
-	union := float64(targetSet.Union(sourceSet).Count())
+	intersection := 0
 
+	for token := range targetSet {
+		if sourceSet.Contains(token) {
+			intersection++
+		}
+	}
+
+	// |A ∪ B| = |A| + |B| - |A ∩ B|
+	union := sourceCount + targetSet.Count() - intersection
 	if union == 0 {
 		return 0.0
 	}
 
-	return intersection / union
+	return float64(intersection) / float64(union)
 }
 
 func EstimateJaccard(sig1, sig2 []uint64) float64 {
