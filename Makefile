@@ -1,4 +1,4 @@
-.PHONY: test test-integration test-all lint coverage bench bench-compare clean
+.PHONY: test test-integration test-all lint coverage bench bench-baseline bench-compare clean
 
 # Unit tests (CI default, no external dependencies)
 test:
@@ -25,18 +25,23 @@ coverage-integration:
 	go test -tags=integration -coverprofile=coverage.out -cover -race ./...
 	go-test-coverage --config=./.testcoverage.yml
 
-# Run benchmarks and save to benchmarks/ with timestamp
+# Run benchmarks and save as current result (gitignored)
 bench:
 	@mkdir -p benchmarks
 	go test -tags=integration -bench=. -benchmem -count=6 -run="^$$" -timeout=300s ./... \
-		| tee benchmarks/$$(date +%Y%m%d_%H%M%S).txt
+		| tee benchmarks/current.txt
 
-# Compare latest benchmark against baseline
+# Rebuild the tracked baseline (commit after running)
+bench-baseline:
+	@mkdir -p benchmarks
+	go test -tags=integration -bench=. -benchmem -count=6 -run="^$$" -timeout=300s ./... \
+		| tee benchmarks/baseline.txt
+	@echo "\nBaseline updated. Run 'git add benchmarks/baseline.txt && git commit' to persist."
+
+# Compare current benchmark against baseline
 bench-compare:
-	@LATEST=$$(ls -t benchmarks/*.txt | head -1); \
-	BASELINE=$$(ls -t benchmarks/*.txt | head -2 | tail -1); \
-	echo "Comparing: $$BASELINE (old) vs $$LATEST (new)"; \
-	benchstat $$BASELINE $$LATEST
+	@if [ ! -f benchmarks/current.txt ]; then echo "Run 'make bench' first."; exit 1; fi
+	benchstat benchmarks/baseline.txt benchmarks/current.txt
 
 # Start Aerospike for integration tests
 aerospike-start:
