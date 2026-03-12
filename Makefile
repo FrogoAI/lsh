@@ -41,7 +41,7 @@ bench-compare:
 # Start Aerospike for integration tests
 aerospike-start:
 	@podman run -d --name aerospike-test -p 3000:3000 \
-		-v $(CURDIR)/aerospike-test.conf:/opt/aerospike/etc/aerospike.conf:ro \
+		-v $(CURDIR)/testdata/aerospike.conf:/opt/aerospike/etc/aerospike.conf:ro \
 		--entrypoint asd docker.io/aerospike/aerospike-server:latest \
 		--config-file /opt/aerospike/etc/aerospike.conf \
 		&& echo "Aerospike started on localhost:3000"
