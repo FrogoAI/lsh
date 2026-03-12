@@ -8,7 +8,7 @@ Core flow: text → shingle → MinHash signature → LSH bands → bucket looku
 ## Architecture
 
 ```
-service.go          – SimilarityService (Upsert entry point, orchestration)
+service.go          – SimilarityService (Upsert entry point, orchestration, L1/L2 cache)
 hasher.go           – MinHash signature computation and band hashing
 utils.go            – Shingle, Jaccard similarity (exact + estimated)
 config.go           – LSH parameters (Bands, Rows, ShingleSize, JaccardThreshold, etc.)
@@ -16,8 +16,12 @@ error.go            – Sentinel errors
 model/record.go     – Record struct (ID, Input, GroupID, Signature)
 repositories/
   storage.go        – Storage interface
-  memory/           – In-memory implementation (used in tests)
+  memory/           – In-memory implementation (used in unit tests)
   aerospike/        – Aerospike implementation (requires external server)
+testdata/
+  aerospike.conf    – Aerospike config for integration tests
+benchmarks/
+  baseline.txt      – Tracked benchmark baseline (rebuild with `make bench-baseline`)
 ```
 
 ## Commands
@@ -31,8 +35,9 @@ make test-all            # Both
 make lint                # golangci-lint
 make coverage            # Unit coverage + threshold check (≥70%)
 make coverage-integration # Full coverage including Aerospike
-make bench               # Run benchmarks, save timestamped result to benchmarks/
-make bench-compare       # Compare latest two benchmark results via benchstat
+make bench               # Run benchmarks → benchmarks/current.txt (gitignored)
+make bench-baseline      # Rebuild tracked baseline (commit after running)
+make bench-compare       # Compare current.txt vs baseline.txt via benchstat
 make aerospike-start     # Start Aerospike via podman
 make aerospike-stop      # Stop Aerospike
 make ci                  # lint + coverage (what CI runs)
