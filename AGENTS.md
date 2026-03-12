@@ -57,7 +57,14 @@ golangci-lint run -v ./...
 - Always run `golangci-lint run ./...` before considering work done.
 - Nolint directives must specify the linter: `// nolint:gosec`.
 
-## 9. Rules
+## Error handling
+
+- **Never ignore errors.** Every `error` return must be checked. Using `_ = fn()` is forbidden.
+- If an error is **critical** (breaks the operation), return it to the caller.
+- If an error is **non-critical** (e.g. cache write failure), log it as a warning with `slog.Warn` and continue execution. Use structured logging with context fields (`slog.String`, `slog.Any`).
+- Use `log/slog` (standard library) for logging. Do not use `fmt.Print*` or `log.Print*` (blocked by linter).
+
+## Rules
 1. **Use `#AI-assisted` in commit messages**.
 2. **Domain packages must have zero infrastructure imports** (no fiber, pgx, etc.).
 3. **New reusable infrastructure goes in `pkg/`**, not inside a service.

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"hash/fnv"
+	"log/slog"
 	"sync"
 
 	"github.com/FrogoAI/lsh/model"
@@ -200,7 +201,14 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 			score := s.CalculateJaccardOptimized(inputTokens, p.Input)
 			if score >= s.config.JaccardThreshold {
 				s.resolvedCache.Store(bid, p.ID)
-				_ = s.repo.SaveResolvedID(bid, p.ID)
+
+				if err := s.repo.SaveResolvedID(bid, p.ID); err != nil {
+					slog.Warn("failed to persist resolved ID to L2 cache",
+						slog.String("bid", bid),
+						slog.String("resolved", p.ID),
+						slog.Any("error", err),
+					)
+				}
 
 				return p.ID, nil
 			}
