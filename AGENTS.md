@@ -22,24 +22,20 @@ repositories/
 
 ## Commands
 
+All shortcuts are in the `Makefile`:
+
 ```sh
-# Unit tests with coverage (CI default)
-go test -coverprofile=coverage.out -cover -race ./...
-
-# Integration tests (requires Aerospike — see below)
-go test -tags=integration -race -v ./...
-
-# Check coverage threshold (must be ≥70%)
-go-test-coverage --config=./.testcoverage.yml
-
-# Lint
-golangci-lint run -v ./...
-
-# Start Aerospike for integration tests
-podman run -d --name aerospike-test -p 3000:3000 \
-  -v /path/to/aerospike.conf:/opt/aerospike/etc/aerospike.conf:ro \
-  --entrypoint asd docker.io/aerospike/aerospike-server:latest \
-  --config-file /opt/aerospike/etc/aerospike.conf
+make test                # Unit tests (no external deps)
+make test-integration    # Integration tests (requires Aerospike)
+make test-all            # Both
+make lint                # golangci-lint
+make coverage            # Unit coverage + threshold check (≥70%)
+make coverage-integration # Full coverage including Aerospike
+make bench               # Run benchmarks, save timestamped result to benchmarks/
+make bench-compare       # Compare latest two benchmark results via benchstat
+make aerospike-start     # Start Aerospike via podman
+make aerospike-stop      # Stop Aerospike
+make ci                  # lint + coverage (what CI runs)
 ```
 
 ## Testing conventions
