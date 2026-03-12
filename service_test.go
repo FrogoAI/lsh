@@ -6,13 +6,10 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
-	"time"
 
-	as "github.com/aerospike/aerospike-client-go/v8"
 	"github.com/k0kubun/pp/v3"
 
 	"github.com/FrogoAI/lsh/model"
-	"github.com/FrogoAI/lsh/repositories/aerospike"
 	"github.com/FrogoAI/lsh/repositories/memory"
 	"github.com/FrogoAI/testutils"
 )
@@ -87,29 +84,6 @@ func TestUpsert(t *testing.T) {
 	pp.Print(repo)
 
 	testutils.NotEqual(t, id1, id3)
-}
-
-func TestAerospike(t *testing.T) {
-	t.Skip() // this test only to understand how aerospike works
-
-	// That`s only to fill soma data
-	ctx := context.Background()
-
-	client, aerr := as.NewClient("127.0.0.1", 3000)
-	testutils.Equal(t, aerr, nil)
-
-	repo := aerospike.NewRepository(client, "test", "lsh", 5000)
-
-	cfg, err := GetLSHConfigFromEnv()
-	testutils.Equal(t, err, nil)
-
-	service := NewSimilarityService(repo, cfg)
-
-	st := time.Now()
-	_, err = service.Upsert(ctx, "users", "test1@gmail.com")
-	testutils.Equal(t, err, nil)
-
-	pp.Println(time.Since(st))
 }
 
 func TestUpsert_EdgeCases(t *testing.T) {

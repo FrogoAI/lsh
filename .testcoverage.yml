@@ -46,7 +46,7 @@ exclude:
     - _easyjson\.go$  # excludes all easyjson generated files
     - /mocks/         # excludes all mocks generated files
     - /examples/      # excludes examples
-    - repositories/aerospike   # excludes aerospike (requires external infrastructure)
+    - repositories/aerospike   # covered by integration tests (tag: integration), not unit tests
 
 # File name of go-test-coverage breakdown file, which can be used to
 # analyze coverage difference.

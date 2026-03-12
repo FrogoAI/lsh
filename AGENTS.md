@@ -23,14 +23,23 @@ repositories/
 ## Commands
 
 ```sh
-# Run tests with coverage
+# Unit tests with coverage (CI default)
 go test -coverprofile=coverage.out -cover -race ./...
+
+# Integration tests (requires Aerospike — see below)
+go test -tags=integration -race -v ./...
 
 # Check coverage threshold (must be ≥70%)
 go-test-coverage --config=./.testcoverage.yml
 
 # Lint
 golangci-lint run -v ./...
+
+# Start Aerospike for integration tests
+podman run -d --name aerospike-test -p 3000:3000 \
+  -v /path/to/aerospike.conf:/opt/aerospike/etc/aerospike.conf:ro \
+  --entrypoint asd docker.io/aerospike/aerospike-server:latest \
+  --config-file /opt/aerospike/etc/aerospike.conf
 ```
 
 ## Testing conventions
@@ -38,7 +47,8 @@ golangci-lint run -v ./...
 - **Table-driven tests only**: define a `cases` (or `testcases`) slice of structs, iterate with `t.Run`.
 - Use `github.com/FrogoAI/testutils` for assertions (`testutils.Equal`, `testutils.NotEqual`).
 - Use `memory.NewRepository()` as the storage backend in unit tests.
-- The `repositories/aerospike` package is excluded from coverage (requires external infrastructure).
+- **Integration tests** use build tag `//go:build integration`. CI runs only unit tests (`-tags="unit"`).
+- The `repositories/aerospike` package is covered by integration tests only (excluded from unit coverage).
 - Coverage threshold: **70%** total (configured in `.testcoverage.yml`).
 
 ## Linting rules
