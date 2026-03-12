@@ -69,16 +69,11 @@ func (s *SimilarityService) getPrefix(group string) (string, error) {
 	return prefix, nil
 }
 
-func (s *SimilarityService) lockGroup(group string) {
+func (s *SimilarityService) groupShard(group string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(group)) //nolint:errcheck
-	s.groupLocks[h.Sum32()%groupLockShards].Lock()
-}
 
-func (s *SimilarityService) unlockGroup(group string) {
-	h := fnv.New32a()
-	h.Write([]byte(group)) //nolint:errcheck
-	s.groupLocks[h.Sum32()%groupLockShards].Unlock()
+	return h.Sum32() % groupLockShards
 }
 
 func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
@@ -111,8 +106,9 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return resolved, nil
 	}
 
-	s.lockGroup(group)
-	defer s.unlockGroup(group)
+	shard := s.groupShard(group)
+	s.groupLocks[shard].Lock()
+	defer s.groupLocks[shard].Unlock()
 
 	// maximum amount of allocation decreased to amount of concurrent processes
 	sigPtr := s.signaturePool.Get().(*[]uint64)

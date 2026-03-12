@@ -25,15 +25,17 @@ coverage-integration:
 	go test -tags=integration -coverprofile=coverage.out -cover -race ./...
 	go-test-coverage --config=./.testcoverage.yml
 
-# Run benchmarks and save as current result (gitignored)
-bench:
+# Run benchmarks on fresh Aerospike, save as current result (gitignored)
+bench: aerospike-stop aerospike-start
 	@mkdir -p benchmarks
+	@sleep 4
 	go test -tags=integration -bench=. -benchmem -count=6 -run="^$$" -timeout=300s ./... \
 		| tee benchmarks/current.txt
 
-# Rebuild the tracked baseline (commit after running)
-bench-baseline:
+# Rebuild the tracked baseline on fresh Aerospike (commit after running)
+bench-baseline: aerospike-stop aerospike-start
 	@mkdir -p benchmarks
+	@sleep 4
 	go test -tags=integration -bench=. -benchmem -count=6 -run="^$$" -timeout=300s ./... \
 		| tee benchmarks/baseline.txt
 	@echo "\nBaseline updated. Run 'git add benchmarks/baseline.txt && git commit' to persist."
