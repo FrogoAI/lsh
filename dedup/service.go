@@ -1,60 +1,46 @@
-package lsh
+package dedup
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"hash/fnv"
 	"log/slog"
 	"sync"
 
-	"github.com/FrogoAI/lsh/model"
+	"github.com/FrogoAI/lsh"
 	"github.com/FrogoAI/lsh/repositories"
 	"github.com/FrogoAI/multiproc/worker"
 	"github.com/FrogoAI/set"
 )
 
-const (
-	jaccardThreshold = 0.1
-	groupLockShards  = 64
-)
+const jaccardMargin = 0.1
 
-type SimilarityService struct {
+type Service struct {
 	hasher        *Hasher
 	repo          repositories.Storage
 	config        *Config
 	signaturePool *sync.Pool
-	groupLocks    [groupLockShards]sync.Mutex
-	prefixCache   sync.Map // group string -> prefix string
-	resolvedCache sync.Map // bid (string) -> resolved bid (string)
+	groupLocks    [lsh.GroupLockShards]sync.Mutex
+	prefixCache   sync.Map
+	resolvedCache sync.Map
 }
 
-func NewSimilarityService(repo repositories.Storage, config *Config) *SimilarityService {
-	sigSize := config.Bands * config.Rows
-
-	svc := &SimilarityService{
-		hasher: NewHasher(config.Bands, config.Rows, config.Seed),
-		repo:   repo,
-		config: config,
-		signaturePool: &sync.Pool{
-			New: func() interface{} {
-				// Allocate EXACTLY what Bands * Rows needs
-				slice := make([]uint64, sigSize)
-				return &slice
-			},
-		},
+func NewService(repo repositories.Storage, config *Config) *Service {
+	return &Service{
+		hasher:        NewHasher(config.Bands, config.Rows, config.Seed),
+		repo:          repo,
+		config:        config,
+		signaturePool: lsh.NewSignaturePool(config.SignatureSize()),
 	}
-
-	return svc
 }
 
-func (s *SimilarityService) GetNewID(input string) string {
+func (s *Service) GetNewID(input string) string {
 	hash := sha256.Sum256([]byte(input))
 
 	return base64.RawURLEncoding.EncodeToString(hash[:16])
 }
 
-func (s *SimilarityService) getPrefix(group string) (string, error) {
+func (s *Service) getPrefix(group string) (string, error) {
 	if v, ok := s.prefixCache.Load(group); ok {
 		return v.(string), nil
 	}
@@ -69,14 +55,7 @@ func (s *SimilarityService) getPrefix(group string) (string, error) {
 	return prefix, nil
 }
 
-func (s *SimilarityService) groupShard(group string) uint32 {
-	h := fnv.New32a()
-	h.Write([]byte(group)) //nolint:errcheck
-
-	return h.Sum32() % groupLockShards
-}
-
-func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (string, error) {
+func (s *Service) Upsert(ctx context.Context, group, input string) (string, error) {
 	if input == "" {
 		return "", ErrEmptyInputString
 	}
@@ -88,17 +67,17 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return "", err
 	}
 
-	if _, ok := existing[bid]; ok {
-		return bid, nil
+	for _, rec := range existing {
+		if rec.Key == bid {
+			return bid, nil
+		}
 	}
 
-	// L1: in-memory cache (per-pod, instant)
 	if resolved, ok := s.resolvedCache.Load(bid); ok {
 		return resolved.(string), nil
 	}
 
-	// L2: persistent cache (shared across pods, survives restarts)
-	if resolved, err := s.repo.GetResolvedID(bid); err != nil {
+	if resolved, err := s.repo.GetValue("res:" + bid); err != nil {
 		return "", err
 	} else if resolved != "" {
 		s.resolvedCache.Store(bid, resolved)
@@ -106,17 +85,16 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return resolved, nil
 	}
 
-	shard := s.groupShard(group)
+	shard := lsh.GroupShard(group)
 	s.groupLocks[shard].Lock()
 	defer s.groupLocks[shard].Unlock()
 
-	// maximum amount of allocation decreased to amount of concurrent processes
 	sigPtr := s.signaturePool.Get().(*[]uint64)
 	defer s.signaturePool.Put(sigPtr)
 
 	sig := *sigPtr
 
-	inputTokens := s.Shingle(input)
+	inputTokens := Shingle(input, s.config.ShingleSize)
 
 	inputLen := len(inputTokens)
 	if inputLen == 0 {
@@ -125,11 +103,10 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 	s.hasher.ComputeSignature(inputTokens, sig)
 
-	// Calculate (for optimization purpose) min and max len of diff between input and result
 	minLen := int(float64(inputLen) * s.config.JaccardThreshold)
 	maxLen := int(float64(inputLen) / s.config.JaccardThreshold)
 
-	keys, err := s.hasher.ComputeBands(sig)
+	keys, err := lsh.ComputeBands(sig, s.config.Bands, s.config.Rows)
 	if err != nil {
 		return "", err
 	}
@@ -139,12 +116,9 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		return "", err
 	}
 
-	bucketKeys := make([]string, len(keys))
-	for i, k := range keys {
-		bucketKeys[i] = prefix + ":" + k
-	}
+	bucketKeys := lsh.PrefixKeys(prefix, keys)
 
-	allMembers, allLens, err := s.repo.BatchGetBuckets(bucketKeys)
+	allMembers, err := s.repo.BatchGetBucketMembers(bucketKeys)
 	if err != nil {
 		return "", err
 	}
@@ -156,32 +130,36 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 			break
 		}
 
-		members, lengths := allMembers[bk], allLens[bk]
+		members := allMembers[bk]
 
 		if len(members) > s.config.MaxBucketSize {
 			continue
 		}
 
-		for i, id := range members {
-			cLen := lengths[i]
-
-			if cLen < minLen || cLen > maxLen {
+		for _, m := range members {
+			if m.Metadata < int64(minLen) || m.Metadata > int64(maxLen) {
 				continue
 			}
 
-			candidateSet.Add(id)
+			candidateSet.Add(m.ID)
 		}
 	}
 
 	if candidateSet.Count() > 0 {
 		ids := candidateSet.ToSlice()
 
-		profiles, err := s.repo.GetRecords(ids)
+		rawRecords, err := s.repo.GetRecords(ids)
 		if err != nil {
 			return "", err
 		}
 
-		// Iterate in deterministic order to ensure consistent results
+		profiles := make(map[string]Record, len(rawRecords))
+		for _, raw := range rawRecords {
+			if r, ok := recordFromBins(raw); ok {
+				profiles[r.ID] = r
+			}
+		}
+
 		for _, id := range ids {
 			p, ok := profiles[id]
 			if !ok {
@@ -190,15 +168,15 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 
 			estJaccard := EstimateJaccard(sig, p.Signature)
 
-			if estJaccard < (s.config.JaccardThreshold - jaccardThreshold) {
+			if estJaccard < (s.config.JaccardThreshold - jaccardMargin) {
 				continue
 			}
 
-			score := s.CalculateJaccardOptimized(inputTokens, p.Input)
+			score := CalculateJaccardOptimized(inputTokens, p.Input, s.config.ShingleSize)
 			if score >= s.config.JaccardThreshold {
 				s.resolvedCache.Store(bid, p.ID)
 
-				if err := s.repo.SaveResolvedID(bid, p.ID); err != nil {
+				if err := s.repo.PutValue("res:"+bid, p.ID); err != nil {
 					slog.Warn("failed to persist resolved ID to L2 cache",
 						slog.String("bid", bid),
 						slog.String("resolved", p.ID),
@@ -217,16 +195,18 @@ func (s *SimilarityService) Upsert(ctx context.Context, group, input string) (st
 		sigCopy := make([]uint64, len(sig))
 		copy(sigCopy, sig)
 
-		return s.repo.SaveRecord(model.Record{
+		rec := Record{
 			ID:        bid,
 			Input:     input,
 			GroupID:   group,
 			Signature: sigCopy,
-		})
+		}
+
+		return s.repo.SaveRecord(bid, rec.toBins())
 	})
 
 	pool.Execute(func(_ context.Context) error {
-		return s.repo.BatchAddToBuckets(bucketKeys, bid, inputLen)
+		return s.repo.BatchAddBucketMember(bucketKeys, bid, int64(inputLen))
 	})
 
 	return bid, pool.Wait()

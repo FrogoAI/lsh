@@ -4,24 +4,17 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v8"
 	"github.com/aerospike/aerospike-client-go/v8/types"
 
-	"github.com/FrogoAI/lsh/model"
+	"github.com/FrogoAI/lsh/repositories"
 )
 
 const (
-	// Bins
-	binMembers    = "m" // Map<UserID, Length>
-	binInput      = "i" // String
-	binGroup      = "g" // String
-	binSignature  = "s" // String
-	binResolvedID = "r" // String (resolved bid cache)
+	binMembers = "m" // Map<MemberID, Metadata>
+	binKV      = "kv"
 
-	// It should be slightly larger than your LSH Config's MaxBucketSize.
-	// If a bucket has more items than this, we return a "stub" to trigger the skip logic.
 	defaultHardLimit = 10000
 
-	// TTL Constants
-	bucketTTL = 14 * 24 * 3600 // 14 Days (Seconds)
-	recordTTL = 90 * 24 * 3600 // 90 Days (Seconds)
+	bucketTTL = 14 * 24 * 3600 // 14 days
+	recordTTL = 90 * 24 * 3600 // 90 days
 )
 
 type Repository struct {
@@ -35,34 +28,29 @@ type Repository struct {
 	hardLimit int
 }
 
-// NewRepository creates a new Aerospike repository.
 func NewRepository(client *as.Client, namespace, set string, hardLimit int) *Repository {
 	if hardLimit <= 0 {
 		hardLimit = defaultHardLimit
 	}
 
-	wp := as.NewWritePolicy(0, 0)
-	// wp.SendKey = true // Useful for debugging/scans
-
 	return &Repository{
 		client:      client,
 		namespace:   namespace,
 		set:         set,
-		writePolicy: wp,
+		writePolicy: as.NewWritePolicy(0, 0),
 		readPolicy:  as.NewPolicy(),
 		hardLimit:   hardLimit,
 	}
 }
 
-func (r *Repository) AddToBucket(bucketKey string, value string, length int) error {
+func (r *Repository) AddBucketMember(bucketKey, memberID string, metadata int64) error {
 	key, err := as.NewKey(r.namespace, r.set, bucketKey)
 	if err != nil {
 		return err
 	}
 
 	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
-
-	op := as.MapPutOp(mapPolicy, binMembers, value, length)
+	op := as.MapPutOp(mapPolicy, binMembers, memberID, metadata)
 
 	wp := *r.writePolicy
 	wp.Expiration = bucketTTL
@@ -72,188 +60,13 @@ func (r *Repository) AddToBucket(bucketKey string, value string, length int) err
 	return err
 }
 
-func (r *Repository) GetBucketMembers(bucketKey string) ([]string, []int, error) {
-	key, err := as.NewKey(r.namespace, r.set, bucketKey)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	opSize := as.MapSizeOp(binMembers)
-
-	record, err := r.client.Operate(r.writePolicy, key, opSize)
-	if err != nil {
-		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
-			return []string{}, []int{}, nil
-		}
-
-		return nil, nil, err
-	}
-
-	sizeInt := 0
-	if res, ok := record.Bins[binMembers].(int); ok {
-		sizeInt = res
-	} else {
-		return []string{}, []int{}, nil
-	}
-
-	if sizeInt > r.hardLimit {
-		return make([]string, sizeInt), make([]int, sizeInt), nil
-	}
-
-	fullRecord, err := r.client.Get(r.readPolicy, key, binMembers)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	rawMap, ok := fullRecord.Bins[binMembers].(map[interface{}]interface{})
-	if !ok {
-		return []string{}, []int{}, nil
-	}
-
-	ids := make([]string, 0, len(rawMap))
-	lengths := make([]int, 0, len(rawMap))
-
-	for k, v := range rawMap {
-		if idStr, ok := k.(string); ok {
-			var lenVal int
-
-			switch n := v.(type) {
-			case int:
-				lenVal = n
-			case int64:
-				lenVal = int(n)
-			case float64:
-				lenVal = int(n)
-			}
-
-			ids = append(ids, idStr)
-			lengths = append(lengths, lenVal)
-		}
-	}
-
-	return ids, lengths, nil
-}
-
-func (r *Repository) SaveRecord(u model.Record) error {
-	key, err := as.NewKey(r.namespace, r.set, u.ID)
-	if err != nil {
-		return err
-	}
-
-	bins := as.BinMap{
-		binInput:     u.Input,
-		binGroup:     u.GroupID,
-		binSignature: u.Signature,
-	}
-
-	wp := *r.writePolicy
-	wp.Expiration = recordTTL
-
-	return r.client.Put(&wp, key, bins)
-}
-
-func (r *Repository) GetRecords(userIDs []string) (map[string]model.Record, error) {
-	if len(userIDs) == 0 {
-		return map[string]model.Record{}, nil
-	}
-
-	keys := make([]*as.Key, len(userIDs))
-	for i, id := range userIDs {
-		k, err := as.NewKey(r.namespace, r.set, id)
-		if err != nil {
-			return nil, err
-		}
-
-		keys[i] = k
-	}
-
-	records, err := r.client.BatchGet(as.NewBatchPolicy(), keys, binInput, binGroup, binSignature)
-	if err != nil {
-		return nil, err
-	}
-
-	// Map Results
-	results := make(map[string]model.Record, len(userIDs))
-
-	for i, rec := range records {
-		if rec != nil {
-			// Safe type assertions
-			input, _ := rec.Bins[binInput].(string)
-			group, _ := rec.Bins[binGroup].(string)
-
-			rawSig, _ := rec.Bins[binSignature].([]interface{})
-
-			sig := make([]uint64, len(rawSig))
-			for i, v := range rawSig {
-				switch n := v.(type) {
-				case int:
-					sig[i] = uint64(n)
-				case int64:
-					sig[i] = uint64(n)
-				case float64:
-					sig[i] = uint64(n)
-				}
-			}
-
-			results[userIDs[i]] = model.Record{
-				ID:        userIDs[i],
-				Input:     input,
-				GroupID:   group,
-				Signature: sig,
-			}
-		}
-	}
-
-	return results, nil
-}
-
-func (r *Repository) SaveResolvedID(bid string, resolvedBid string) error {
-	key, err := as.NewKey(r.namespace, r.set, "res:"+bid)
-	if err != nil {
-		return err
-	}
-
-	wp := *r.writePolicy
-	wp.Expiration = recordTTL
-
-	return r.client.Put(&wp, key, as.BinMap{binResolvedID: resolvedBid})
-}
-
-func (r *Repository) GetResolvedID(bid string) (string, error) {
-	key, err := as.NewKey(r.namespace, r.set, "res:"+bid)
-	if err != nil {
-		return "", err
-	}
-
-	rec, err := r.client.Get(r.readPolicy, key, binResolvedID)
-	if err != nil {
-		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
-			return "", nil
-		}
-
-		return "", err
-	}
-
-	if resolved, ok := rec.Bins[binResolvedID].(string); ok {
-		return resolved, nil
-	}
-
-	return "", nil
-}
-
-func (r *Repository) Close() {
-	if r.client != nil {
-		r.client.Close()
-	}
-}
-
-func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length int) error {
+func (r *Repository) BatchAddBucketMember(bucketKeys []string, memberID string, metadata int64) error {
 	if len(bucketKeys) == 0 {
 		return nil
 	}
 
 	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
-	op := as.MapPutOp(mapPolicy, binMembers, value, length)
+	op := as.MapPutOp(mapPolicy, binMembers, memberID, metadata)
 
 	records := make([]as.BatchRecordIfc, len(bucketKeys))
 
@@ -269,20 +82,80 @@ func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length
 		records[i] = as.NewBatchWrite(wp, key, op)
 	}
 
-	err := r.client.BatchOperate(nil, records)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return r.client.BatchOperate(nil, records)
 }
 
-func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, map[string][]int, error) {
+func (r *Repository) GetBucketMembers(bucketKey string) ([]repositories.BucketMember, error) {
+	key, err := as.NewKey(r.namespace, r.set, bucketKey)
+	if err != nil {
+		return nil, err
+	}
+
+	opSize := as.MapSizeOp(binMembers)
+
+	record, err := r.client.Operate(r.writePolicy, key, opSize)
+	if err != nil {
+		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	sizeInt := 0
+	if res, ok := record.Bins[binMembers].(int); ok {
+		sizeInt = res
+	} else {
+		return nil, nil
+	}
+
+	if sizeInt > r.hardLimit {
+		stub := make([]repositories.BucketMember, sizeInt)
+
+		return stub, nil
+	}
+
+	fullRecord, err := r.client.Get(r.readPolicy, key, binMembers)
+	if err != nil {
+		return nil, err
+	}
+
+	rawMap, ok := fullRecord.Bins[binMembers].(map[interface{}]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	members := make([]repositories.BucketMember, 0, len(rawMap))
+
+	for k, v := range rawMap {
+		idStr, ok := k.(string)
+		if !ok {
+			continue
+		}
+
+		var meta int64
+
+		switch n := v.(type) {
+		case int:
+			meta = int64(n)
+		case int64:
+			meta = n
+		case float64:
+			meta = int64(n)
+		}
+
+		members = append(members, repositories.BucketMember{ID: idStr, Metadata: meta})
+	}
+
+	return members, nil
+}
+
+func (r *Repository) BatchGetBucketMembers(bucketKeys []string) (map[string][]repositories.BucketMember, error) {
 	keys := make([]*as.Key, len(bucketKeys))
 	for i, k := range bucketKeys {
 		key, err := as.NewKey(r.namespace, r.set, k)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		keys[i] = key
@@ -290,42 +163,135 @@ func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, 
 
 	records, err := r.client.BatchGet(nil, keys, binMembers)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	allMembers := make(map[string][]string)
-	allLens := make(map[string][]int)
+	result := make(map[string][]repositories.BucketMember, len(bucketKeys))
 
 	for i, rec := range records {
 		if rec == nil {
 			continue
 		}
 
-		if rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{}); ok {
-			bKey := bucketKeys[i]
+		rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{})
+		if !ok {
+			continue
+		}
 
-			for id, l := range rawMap {
-				idStr, ok := id.(string)
-				if !ok {
-					continue
-				}
+		bKey := bucketKeys[i]
 
-				var lenVal int
-
-				switch n := l.(type) {
-				case int:
-					lenVal = n
-				case int64:
-					lenVal = int(n)
-				case float64:
-					lenVal = int(n)
-				}
-
-				allMembers[bKey] = append(allMembers[bKey], idStr)
-				allLens[bKey] = append(allLens[bKey], lenVal)
+		for id, v := range rawMap {
+			idStr, ok := id.(string)
+			if !ok {
+				continue
 			}
+
+			var meta int64
+
+			switch n := v.(type) {
+			case int:
+				meta = int64(n)
+			case int64:
+				meta = n
+			case float64:
+				meta = int64(n)
+			}
+
+			result[bKey] = append(result[bKey], repositories.BucketMember{ID: idStr, Metadata: meta})
 		}
 	}
 
-	return allMembers, allLens, nil
+	return result, nil
+}
+
+func (r *Repository) SaveRecord(key string, bins map[string]any) error {
+	asKey, err := as.NewKey(r.namespace, r.set, key)
+	if err != nil {
+		return err
+	}
+
+	asBins := as.BinMap(bins)
+
+	wp := *r.writePolicy
+	wp.Expiration = recordTTL
+
+	return r.client.Put(&wp, asKey, asBins)
+}
+
+func (r *Repository) GetRecords(keys []string) ([]repositories.Record, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+
+	asKeys := make([]*as.Key, len(keys))
+	for i, id := range keys {
+		k, err := as.NewKey(r.namespace, r.set, id)
+		if err != nil {
+			return nil, err
+		}
+
+		asKeys[i] = k
+	}
+
+	records, err := r.client.BatchGet(as.NewBatchPolicy(), asKeys)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []repositories.Record
+
+	for i, rec := range records {
+		if rec == nil {
+			continue
+		}
+
+		bins := make(map[string]any, len(rec.Bins))
+		for k, v := range rec.Bins {
+			bins[k] = v
+		}
+
+		result = append(result, repositories.Record{Key: keys[i], Bins: bins})
+	}
+
+	return result, nil
+}
+
+func (r *Repository) PutValue(key, value string) error {
+	asKey, err := as.NewKey(r.namespace, r.set, "kv:"+key)
+	if err != nil {
+		return err
+	}
+
+	wp := *r.writePolicy
+	wp.Expiration = recordTTL
+
+	return r.client.Put(&wp, asKey, as.BinMap{binKV: value})
+}
+
+func (r *Repository) GetValue(key string) (string, error) {
+	asKey, err := as.NewKey(r.namespace, r.set, "kv:"+key)
+	if err != nil {
+		return "", err
+	}
+
+	rec, err := r.client.Get(r.readPolicy, asKey, binKV)
+	if err != nil {
+		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
+			return "", nil
+		}
+
+		return "", err
+	}
+
+	if v, ok := rec.Bins[binKV].(string); ok {
+		return v, nil
+	}
+
+	return "", nil
+}
+
+func (r *Repository) Close() {
+	if r.client != nil {
+		r.client.Close()
+	}
 }

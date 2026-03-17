@@ -1,4 +1,4 @@
-package lsh
+package dedup
 
 import (
 	"strings"
@@ -6,18 +6,18 @@ import (
 	"github.com/FrogoAI/set"
 )
 
-func (s *SimilarityService) Shingle(input string) set.GenericDataSet[string] {
+func Shingle(input string, size int) set.GenericDataSet[string] {
 	input = "^" + strings.ToLower(strings.TrimSpace(input)) + "$"
 
 	runes := []rune(input)
-	if len(runes) < s.config.ShingleSize {
+	if len(runes) < size {
 		return set.NewGenericDataSet[string](input)
 	}
 
 	tokenSet := set.NewGenericDataSet[string]()
 
-	for i := 0; i <= len(runes)-s.config.ShingleSize; i++ {
-		token := string(runes[i : i+s.config.ShingleSize])
+	for i := 0; i <= len(runes)-size; i++ {
+		token := string(runes[i : i+size])
 
 		tokenSet.Add(token)
 	}
@@ -25,13 +25,13 @@ func (s *SimilarityService) Shingle(input string) set.GenericDataSet[string] {
 	return tokenSet
 }
 
-func (s *SimilarityService) CalculateJaccardOptimized(sourceSet set.GenericDataSet[string], targetStr string) float64 {
+func CalculateJaccardOptimized(sourceSet set.GenericDataSet[string], targetStr string, shingleSize int) float64 {
 	sourceCount := sourceSet.Count()
 	if sourceCount == 0 {
 		return 0.0
 	}
 
-	targetSet := s.Shingle(targetStr)
+	targetSet := Shingle(targetStr, shingleSize)
 
 	intersection := 0
 
@@ -41,7 +41,6 @@ func (s *SimilarityService) CalculateJaccardOptimized(sourceSet set.GenericDataS
 		}
 	}
 
-	// |A ∪ B| = |A| + |B| - |A ∩ B|
 	union := sourceCount + targetSet.Count() - intersection
 	if union == 0 {
 		return 0.0

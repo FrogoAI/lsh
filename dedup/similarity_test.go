@@ -1,50 +1,45 @@
-package lsh
+package dedup
 
 import (
 	"reflect"
 	"testing"
 
 	"github.com/FrogoAI/set"
-	"github.com/FrogoAI/testutils"
 )
 
 func TestShingle(t *testing.T) {
-	service := &SimilarityService{
-		config: &Config{ShingleSize: 3},
-	}
-
 	testcases := []struct {
 		name     string
 		input    string
 		expected []string
 	}{
 		{
-			name:     "Normal Sentence",
+			name:     "normal sentence",
 			input:    "hello",
 			expected: []string{"^he", "hel", "ell", "llo", "lo$"},
 		},
 		{
-			name:     "Exact Size",
+			name:     "exact size",
 			input:    "cat",
 			expected: []string{"^ca", "cat", "at$"},
 		},
 		{
-			name:     "Short Input (Keep Original)",
+			name:     "short input",
 			input:    "hi",
 			expected: []string{"^hi", "hi$"},
 		},
 		{
-			name:     "Empty String",
+			name:     "empty string",
 			input:    "",
 			expected: []string{"^$"},
 		},
 		{
-			name:     "Whitespace Trimming",
+			name:     "whitespace trimming",
 			input:    "  abc  ",
 			expected: []string{"^ab", "abc", "bc$"},
 		},
 		{
-			name:     "Case Insensitivity",
+			name:     "case insensitivity",
 			input:    "AbC",
 			expected: []string{"^ab", "abc", "bc$"},
 		},
@@ -52,14 +47,10 @@ func TestShingle(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.expected == nil {
-				t.Skip("Skipping undefined expectation")
-			}
-
-			got := service.Shingle(tc.input)
+			got := Shingle(tc.input, 3)
 
 			if !reflect.DeepEqual(got, set.NewGenericDataSet[string](tc.expected...)) {
-				t.Errorf("\nInput:    %q\nExpected: %v\nGot:      %v", tc.input, tc.expected, got)
+				t.Errorf("\ninput:    %q\nexpected: %v\ngot:      %v", tc.input, tc.expected, got)
 			}
 		})
 	}
@@ -91,55 +82,27 @@ func TestEstimateJaccard(t *testing.T) {
 }
 
 func TestCalculateJaccardOptimized(t *testing.T) {
-	service := &SimilarityService{
-		config: &Config{ShingleSize: 2},
-	}
-
 	tests := []struct {
 		name      string
 		sourceStr string
 		targetStr string
 		want      float64
 	}{
-		{
-			name:      "Exact Match",
-			sourceStr: "hello",
-			targetStr: "hello",
-			want:      1.0,
-		},
-		{
-			name:      "Completely Different",
-			sourceStr: "aaaaa",
-			targetStr: "bbbbb",
-			want:      0.0,
-		},
-		{
-			name:      "Partial Overlap (Half)",
-			sourceStr: "context", // {co, on, nt, te, ex, xt} (6)
-			targetStr: "content", // {co, on, nt, te, en}     (5 unique)
-			want:      0.6666666666666666,
-		},
-		{
-			name:      "Empty Source Set",
-			sourceStr: "",
-			targetStr: "anything",
-			want:      0.0,
-		},
-		{
-			name:      "Subset (Target inside Source)",
-			sourceStr: "masterpiece",
-			targetStr: "master",
-			want:      0.46153846153846156,
-		},
+		{name: "exact match", sourceStr: "hello", targetStr: "hello", want: 1.0},
+		{name: "completely different", sourceStr: "aaaaa", targetStr: "bbbbb", want: 0.0},
+		{name: "partial overlap", sourceStr: "context", targetStr: "content", want: 0.6666666666666666},
+		{name: "empty source", sourceStr: "", targetStr: "anything", want: 0.0},
+		{name: "subset", sourceStr: "masterpiece", targetStr: "master", want: 0.46153846153846156},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			sourceSet := service.Shingle(tc.sourceStr)
+			sourceSet := Shingle(tc.sourceStr, 2)
+			got := CalculateJaccardOptimized(sourceSet, tc.targetStr, 2)
 
-			got := service.CalculateJaccardOptimized(sourceSet, tc.targetStr)
-
-			testutils.Equal(t, got, tc.want)
+			if got != tc.want {
+				t.Errorf("got %f, want %f", got, tc.want)
+			}
 		})
 	}
 }

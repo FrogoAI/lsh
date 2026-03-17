@@ -3,129 +3,126 @@ package memory
 import (
 	"sync"
 
-	"github.com/FrogoAI/lsh/model"
+	"github.com/FrogoAI/lsh/repositories"
 )
 
 type Repository struct {
-	mu       sync.RWMutex
-	buckets  map[string][]string
-	lens     map[string][]int
-	profiles map[string]model.Record
-	resolved map[string]string
+	mu      sync.RWMutex
+	buckets map[string][]repositories.BucketMember
+	records map[string]map[string]any
+	values  map[string]string
 }
 
 func NewRepository() *Repository {
 	return &Repository{
-		buckets:  make(map[string][]string),
-		lens:     make(map[string][]int),
-		profiles: make(map[string]model.Record),
-		resolved: make(map[string]string),
+		buckets: make(map[string][]repositories.BucketMember),
+		records: make(map[string]map[string]any),
+		values:  make(map[string]string),
 	}
 }
 
-func (r *Repository) AddToBucket(k string, v string, l int) error {
+func (r *Repository) AddBucketMember(bucketKey, memberID string, metadata int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.buckets[k] = append(r.buckets[k], v)
-	r.lens[k] = append(r.lens[k], l)
+	r.buckets[bucketKey] = append(r.buckets[bucketKey], repositories.BucketMember{
+		ID:       memberID,
+		Metadata: metadata,
+	})
 
 	return nil
 }
 
-func (r *Repository) GetBucketMembers(k string) ([]string, []int, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if v, ok := r.buckets[k]; ok {
-		out := make([]string, len(v))
-		copy(out, v)
-
-		outL := make([]int, len(v))
-		copy(outL, r.lens[k])
-
-		return out, outL, nil
-	}
-
-	return nil, nil, nil
-}
-
-func (r *Repository) SaveRecord(u model.Record) error {
+func (r *Repository) BatchAddBucketMember(bucketKeys []string, memberID string, metadata int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.profiles[u.ID] = u
+	for _, k := range bucketKeys {
+		r.buckets[k] = append(r.buckets[k], repositories.BucketMember{
+			ID:       memberID,
+			Metadata: metadata,
+		})
+	}
 
 	return nil
 }
 
-func (r *Repository) GetRecords(ids []string) (map[string]model.Record, error) {
+func (r *Repository) GetBucketMembers(bucketKey string) ([]repositories.BucketMember, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	res := make(map[string]model.Record)
+	members, ok := r.buckets[bucketKey]
+	if !ok {
+		return nil, nil
+	}
 
-	for _, id := range ids {
-		if p, ok := r.profiles[id]; ok {
-			res[id] = p
+	out := make([]repositories.BucketMember, len(members))
+	copy(out, members)
+
+	return out, nil
+}
+
+func (r *Repository) BatchGetBucketMembers(bucketKeys []string) (map[string][]repositories.BucketMember, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make(map[string][]repositories.BucketMember, len(bucketKeys))
+
+	for _, k := range bucketKeys {
+		members := r.buckets[k]
+
+		out := make([]repositories.BucketMember, len(members))
+		copy(out, members)
+
+		result[k] = out
+	}
+
+	return result, nil
+}
+
+func (r *Repository) SaveRecord(key string, bins map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cp := make(map[string]any, len(bins))
+	for k, v := range bins {
+		cp[k] = v
+	}
+
+	r.records[key] = cp
+
+	return nil
+}
+
+func (r *Repository) GetRecords(keys []string) ([]repositories.Record, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []repositories.Record
+
+	for _, key := range keys {
+		if bins, ok := r.records[key]; ok {
+			result = append(result, repositories.Record{Key: key, Bins: bins})
 		}
 	}
 
-	return res, nil
+	return result, nil
 }
 
-func (r *Repository) SaveResolvedID(bid string, resolvedBid string) error {
+func (r *Repository) PutValue(key, value string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.resolved[bid] = resolvedBid
+	r.values[key] = value
 
 	return nil
 }
 
-func (r *Repository) GetResolvedID(bid string) (string, error) {
+func (r *Repository) GetValue(key string) (string, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if v, ok := r.resolved[bid]; ok {
-		return v, nil
-	}
-
-	return "", nil
+	return r.values[key], nil
 }
 
 func (r *Repository) Close() {}
-
-func (r *Repository) BatchAddToBuckets(bucketKeys []string, value string, length int) error {
-	for _, k := range bucketKeys {
-		err := r.AddToBucket(k, value, length)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *Repository) BatchGetBuckets(bucketKeys []string) (map[string][]string, map[string][]int, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	buckets := make(map[string][]string)
-	sizes := make(map[string][]int)
-
-	for _, k := range bucketKeys {
-		v := r.buckets[k]
-
-		out := make([]string, len(v))
-		copy(out, v)
-
-		outL := make([]int, len(v))
-		copy(outL, r.lens[k])
-
-		buckets[k] = out
-		sizes[k] = outL
-	}
-
-	return buckets, sizes, nil
-}
