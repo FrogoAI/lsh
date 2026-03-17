@@ -110,7 +110,7 @@ func (s *Service) Index(ctx context.Context, group, userID string, vector []floa
 
 // FindSimilar returns users with vectors similar to the query vector,
 // verified by exact cosine similarity, sorted descending by score.
-func (s *Service) FindSimilar(ctx context.Context, group string, vector []float64, topK int) ([]Match, error) {
+func (s *Service) FindSimilar(_ context.Context, group string, vector []float64, topK int) ([]Match, error) {
 	if len(vector) == 0 {
 		return nil, ErrEmptyVector
 	}
@@ -170,8 +170,6 @@ func (s *Service) FindSimilar(ctx context.Context, group string, vector []float6
 	if err != nil {
 		return nil, err
 	}
-
-	_ = ctx
 
 	var matches []Match
 

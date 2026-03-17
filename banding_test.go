@@ -158,6 +158,7 @@ func TestGroupShard(t *testing.T) {
 
 func TestGroupShard_Distribution(t *testing.T) {
 	seen := make(map[uint32]bool)
+
 	for i := 0; i < 1000; i++ {
 		s := GroupShard("group_" + string(rune(i)))
 		seen[s] = true

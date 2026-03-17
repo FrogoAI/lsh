@@ -42,21 +42,23 @@ func (c *Config) CalculateApproximateThreshold() float64 {
 		return 0.0
 	}
 
+	const half = 0.5
+
 	lo, hi := -1.0, 1.0
 
 	for range 100 { //nolint:mnd
-		mid := (lo + hi) / 2.0
+		mid := (lo + hi) * half
 		pOneBand := math.Pow(1.0-math.Acos(mid)/math.Pi, float64(c.Rows))
 		pAnyBand := 1.0 - math.Pow(1.0-pOneBand, float64(c.Bands))
 
-		if pAnyBand < 0.5 { //nolint:mnd
+		if pAnyBand < half {
 			lo = mid
 		} else {
 			hi = mid
 		}
 	}
 
-	return (lo + hi) / 2.0
+	return (lo + hi) * half
 }
 
 // HashVersion computes a deterministic prefix from group + all config fields.
