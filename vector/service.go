@@ -52,14 +52,13 @@ func NewService(repo repositories.Storage, config *Config) (*Service, error) {
 	}, nil
 }
 
-// WithMetrics sets pre-built OpenTelemetry instruments for this service.
-// Create via lsh.NewInstruments(meter, "lsh.vector.").
+// WithMetrics injects pre-built OpenTelemetry instruments.
 // If not called, metrics are silently skipped.
 func (s *Service) WithMetrics(m *lsh.Instruments) {
 	s.metrics = m
 }
 
-// GetNewID returns a deterministic ID derived from the vector content.
+// GetNewID returns a deterministic ID derived from the vector content (SHA256, base64url).
 func (s *Service) GetNewID(vector []float64) string {
 	buf := make([]byte, len(vector)*8) //nolint:mnd
 
@@ -87,9 +86,8 @@ func (s *Service) getPrefix(group string) (string, error) {
 	return prefix, nil
 }
 
-// Upsert indexes a vector and returns a behavioural ID.
-// If a similar vector already exists (cosine >= threshold), returns the existing ID.
-// Otherwise stores the vector and returns a new ID.
+// Upsert assigns a behavioural ID to the given vector.
+// Returns the existing representative's ID if cosine >= threshold, or a new ID if novel.
 func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (string, error) {
 	start := time.Now()
 

@@ -1,88 +1,42 @@
+PASS
+ok  	github.com/FrogoAI/lsh/v2	0.004s
 goos: linux
 goarch: amd64
-pkg: github.com/FrogoAI/lsh
+pkg: github.com/FrogoAI/lsh/v2/dedup
 cpu: Intel(R) Core(TM) Ultra 7 255H
-BenchmarkUpsert/NewRecord-16        	  131772	     23589 ns/op	    8755 B/op	     116 allocs/op
-BenchmarkUpsert/NewRecord-16        	 1000000	     36390 ns/op	   11969 B/op	     159 allocs/op
-BenchmarkUpsert/NewRecord-16        	  686056	      2056 ns/op	     128 B/op	       4 allocs/op
-BenchmarkUpsert/NewRecord-16        	  740191	      2203 ns/op	     128 B/op	       4 allocs/op
-BenchmarkUpsert/NewRecord-16        	  889684	      2145 ns/op	     128 B/op	       4 allocs/op
-BenchmarkUpsert/NewRecord-16        	 1000000	      2031 ns/op	     128 B/op	       4 allocs/op
-BenchmarkUpsert/DuplicateMatch-16   	  871345	      1231 ns/op	     856 B/op	       4 allocs/op
-BenchmarkUpsert/DuplicateMatch-16   	 1000000	      1398 ns/op	     856 B/op	       4 allocs/op
-BenchmarkUpsert/DuplicateMatch-16   	 1000000	      1264 ns/op	     856 B/op	       4 allocs/op
-BenchmarkUpsert/DuplicateMatch-16   	 1000000	      1389 ns/op	     856 B/op	       4 allocs/op
-BenchmarkUpsert/DuplicateMatch-16   	 1000000	      1441 ns/op	     856 B/op	       4 allocs/op
-BenchmarkUpsert/DuplicateMatch-16   	 1000000	      1288 ns/op	     856 B/op	       4 allocs/op
-BenchmarkUpsert/SimilarMatch-16     	 1817130	       611.4 ns/op	      88 B/op	       3 allocs/op
-BenchmarkUpsert/SimilarMatch-16     	 1842668	       631.9 ns/op	      88 B/op	       3 allocs/op
-BenchmarkUpsert/SimilarMatch-16     	 1804516	       642.1 ns/op	      88 B/op	       3 allocs/op
-BenchmarkUpsert/SimilarMatch-16     	 1798570	       662.0 ns/op	      88 B/op	       3 allocs/op
-BenchmarkUpsert/SimilarMatch-16     	 1848512	       648.3 ns/op	      88 B/op	       3 allocs/op
-BenchmarkUpsert/SimilarMatch-16     	 1810581	       632.6 ns/op	      88 B/op	       3 allocs/op
-BenchmarkSimilarityComparison/SignatureEstimation-16         	427947805	         2.776 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSimilarityComparison/SignatureEstimation-16         	448231358	         2.661 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSimilarityComparison/SignatureEstimation-16         	449786895	         2.762 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSimilarityComparison/SignatureEstimation-16         	381807924	         2.656 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSimilarityComparison/SignatureEstimation-16         	393850677	         2.650 ns/op	       0 B/op	       0 allocs/op
-BenchmarkSimilarityComparison/SignatureEstimation-16         	390062184	         2.780 ns/op	       0 B/op	       0 allocs/op
+BenchmarkUpsert/NewRecord-16         	   66837	     20261 ns/op	    7414 B/op	     132 allocs/op
+BenchmarkUpsert/NewRecord-16         	 1000000	     16568 ns/op	    8665 B/op	     148 allocs/op
+BenchmarkUpsert/NewRecord-16         	 1880881	      9851 ns/op	    6382 B/op	      82 allocs/op
+BenchmarkUpsert/NewRecord-16         	 1531392	       733.1 ns/op	     207 B/op	       5 allocs/op
+BenchmarkUpsert/NewRecord-16         	 1636651	       692.6 ns/op	     207 B/op	       5 allocs/op
+BenchmarkUpsert/NewRecord-16         	 1784821	       650.5 ns/op	     207 B/op	       5 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 6942067	       176.3 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 6427264	       187.2 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 6591598	       172.3 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 6696342	       172.9 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 6625664	       171.3 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 6522865	       178.6 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 5543952	       182.4 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 6746923	       174.0 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 6163500	       189.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 6807003	       166.8 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 6720091	       178.9 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 6386665	       178.2 ns/op	      40 B/op	       2 allocs/op
 PASS
-ok  	github.com/FrogoAI/lsh	94.552s
-?   	github.com/FrogoAI/lsh/model	[no test files]
-?   	github.com/FrogoAI/lsh/repositories	[no test files]
+ok  	github.com/FrogoAI/lsh/v2/dedup	62.921s
+?   	github.com/FrogoAI/lsh/v2/repositories	[no test files]
+?   	github.com/FrogoAI/lsh/v2/repositories/aerospike	[no test files]
+PASS
+ok  	github.com/FrogoAI/lsh/v2/repositories/memory	0.004s
 goos: linux
 goarch: amd64
-pkg: github.com/FrogoAI/lsh/repositories/aerospike
+pkg: github.com/FrogoAI/lsh/v2/vector
 cpu: Intel(R) Core(TM) Ultra 7 255H
-BenchmarkAerospike_AddToBucket-16          	    7300	    277604 ns/op	    1412 B/op	      20 allocs/op
-BenchmarkAerospike_AddToBucket-16          	    3319	    314829 ns/op	    1421 B/op	      20 allocs/op
-BenchmarkAerospike_AddToBucket-16          	    3763	    312728 ns/op	    1420 B/op	      20 allocs/op
-BenchmarkAerospike_AddToBucket-16          	    3510	    323561 ns/op	    1458 B/op	      20 allocs/op
-BenchmarkAerospike_AddToBucket-16          	    3675	    291059 ns/op	    1402 B/op	      20 allocs/op
-BenchmarkAerospike_AddToBucket-16          	    4094	    312408 ns/op	    1403 B/op	      20 allocs/op
-BenchmarkAerospike_GetBucketMembers-16     	    8629	    253162 ns/op	   11962 B/op	     226 allocs/op
-BenchmarkAerospike_GetBucketMembers-16     	    5185	    193858 ns/op	   11962 B/op	     226 allocs/op
-BenchmarkAerospike_GetBucketMembers-16     	    7172	    165894 ns/op	   11961 B/op	     226 allocs/op
-BenchmarkAerospike_GetBucketMembers-16     	    7285	    204030 ns/op	   11961 B/op	     226 allocs/op
-BenchmarkAerospike_GetBucketMembers-16     	    6217	    211857 ns/op	   11961 B/op	     226 allocs/op
-BenchmarkAerospike_GetBucketMembers-16     	    8991	    193250 ns/op	   11961 B/op	     226 allocs/op
-BenchmarkAerospike_SaveRecord-16           	   11806	    128840 ns/op	    1274 B/op	      23 allocs/op
-BenchmarkAerospike_SaveRecord-16           	   10956	     99709 ns/op	    1286 B/op	      23 allocs/op
-BenchmarkAerospike_SaveRecord-16           	   11820	    136622 ns/op	    1279 B/op	      23 allocs/op
-BenchmarkAerospike_SaveRecord-16           	    8440	    208331 ns/op	    1282 B/op	      23 allocs/op
-BenchmarkAerospike_SaveRecord-16           	   10000	    140462 ns/op	    1294 B/op	      23 allocs/op
-BenchmarkAerospike_SaveRecord-16           	    9421	    111500 ns/op	    1274 B/op	      23 allocs/op
-BenchmarkAerospike_GetRecords-16           	    5452	    261067 ns/op	   63226 B/op	     149 allocs/op
-BenchmarkAerospike_GetRecords-16           	    5102	    230285 ns/op	   63226 B/op	     149 allocs/op
-BenchmarkAerospike_GetRecords-16           	    5839	    232328 ns/op	   63226 B/op	     149 allocs/op
-BenchmarkAerospike_GetRecords-16           	    4568	    238165 ns/op	   63227 B/op	     149 allocs/op
-BenchmarkAerospike_GetRecords-16           	    4446	    231806 ns/op	   63226 B/op	     149 allocs/op
-BenchmarkAerospike_GetRecords-16           	    5300	    206774 ns/op	   63226 B/op	     149 allocs/op
-BenchmarkAerospike_BatchAddToBuckets-16    	    1807	   2513502 ns/op	   30515 B/op	     374 allocs/op
-BenchmarkAerospike_BatchAddToBuckets-16    	     400	   3326167 ns/op	   30501 B/op	     380 allocs/op
-BenchmarkAerospike_BatchAddToBuckets-16    	     320	   3212511 ns/op	   30715 B/op	     380 allocs/op
-BenchmarkAerospike_BatchAddToBuckets-16    	     399	   3080840 ns/op	   30490 B/op	     379 allocs/op
-BenchmarkAerospike_BatchAddToBuckets-16    	     338	   3008117 ns/op	   30492 B/op	     379 allocs/op
-BenchmarkAerospike_BatchAddToBuckets-16    	     416	   3007307 ns/op	   30487 B/op	     379 allocs/op
-BenchmarkAerospike_BatchGetBuckets-16      	    3790	    317003 ns/op	   53125 B/op	     512 allocs/op
-BenchmarkAerospike_BatchGetBuckets-16      	    3664	    287239 ns/op	   53123 B/op	     512 allocs/op
-BenchmarkAerospike_BatchGetBuckets-16      	    4212	    313876 ns/op	   53124 B/op	     512 allocs/op
-BenchmarkAerospike_BatchGetBuckets-16      	    4210	    299785 ns/op	   53123 B/op	     512 allocs/op
-BenchmarkAerospike_BatchGetBuckets-16      	    4184	    297493 ns/op	   53123 B/op	     512 allocs/op
-BenchmarkAerospike_BatchGetBuckets-16      	    3560	    295204 ns/op	   53124 B/op	     512 allocs/op
-BenchmarkAerospike_SaveResolvedID-16       	   16483	     79182 ns/op	    1097 B/op	      15 allocs/op
-BenchmarkAerospike_SaveResolvedID-16       	   12190	     87176 ns/op	    1097 B/op	      15 allocs/op
-BenchmarkAerospike_SaveResolvedID-16       	   12477	     85119 ns/op	    1091 B/op	      14 allocs/op
-BenchmarkAerospike_SaveResolvedID-16       	   14853	     81178 ns/op	    1092 B/op	      15 allocs/op
-BenchmarkAerospike_SaveResolvedID-16       	   15182	     77334 ns/op	    1092 B/op	      15 allocs/op
-BenchmarkAerospike_SaveResolvedID-16       	   14948	     80901 ns/op	    1110 B/op	      15 allocs/op
-BenchmarkAerospike_GetResolvedID-16        	   15105	     70493 ns/op	    1016 B/op	      13 allocs/op
-BenchmarkAerospike_GetResolvedID-16        	   19219	     67649 ns/op	    1016 B/op	      13 allocs/op
-BenchmarkAerospike_GetResolvedID-16        	   19048	     70665 ns/op	    1016 B/op	      13 allocs/op
-BenchmarkAerospike_GetResolvedID-16        	   17508	     62895 ns/op	    1016 B/op	      13 allocs/op
-BenchmarkAerospike_GetResolvedID-16        	   19242	     68914 ns/op	    1016 B/op	      13 allocs/op
-BenchmarkAerospike_GetResolvedID-16        	   17043	     63479 ns/op	    1016 B/op	      13 allocs/op
+BenchmarkUpsert-16    	  163213	      7874 ns/op	    4626 B/op	      82 allocs/op
+BenchmarkUpsert-16    	  115628	      8896 ns/op	    4646 B/op	      82 allocs/op
+BenchmarkUpsert-16    	  118194	      9141 ns/op	    4662 B/op	      82 allocs/op
+BenchmarkUpsert-16    	  124546	      8733 ns/op	    4666 B/op	      82 allocs/op
+BenchmarkUpsert-16    	  150988	      8800 ns/op	    4637 B/op	      82 allocs/op
+BenchmarkUpsert-16    	  124509	      8279 ns/op	    4667 B/op	      82 allocs/op
 PASS
-ok  	github.com/FrogoAI/lsh/repositories/aerospike	89.433s
-PASS
-ok  	github.com/FrogoAI/lsh/repositories/memory	0.004s
+ok  	github.com/FrogoAI/lsh/v2/vector	7.489s

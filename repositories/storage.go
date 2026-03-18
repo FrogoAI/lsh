@@ -1,22 +1,19 @@
 package repositories
 
-// Representative is a cluster leader stored in a bucket.
-// Each bucket maps memberID -> metadata (set semantics, not append).
-// For dedup: Metadata = shingle length. For vectors: Metadata = 0.
+// Representative is a cluster leader stored in a bucket (set semantics, keyed by memberID).
+// Metadata is shingle length for dedup, 0 for vectors.
 type Representative struct {
 	ID       string
 	Metadata int64
 }
 
-// Record is an opaque key-value record. The caller defines bin names and handles serialization.
+// Record is an opaque key-value record with caller-defined bin names.
 type Record struct {
 	Key  string
 	Bins map[string]any
 }
 
-// Storage is a generic persistence interface with no domain knowledge.
-// Buckets store representatives (bounded, set-keyed by memberID).
-// Records store full data (vectors, signatures, etc.).
+// Storage is a generic persistence interface for buckets, records, and key-value pairs.
 type Storage interface {
 	// SetRepresentative upserts a representative into a bucket.
 	// If memberID already exists in the bucket, metadata is updated (idempotent).

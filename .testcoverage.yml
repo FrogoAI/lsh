@@ -47,6 +47,7 @@ exclude:
     - /mocks/         # excludes all mocks generated files
     - /examples/      # excludes examples
     - repositories/aerospike   # covered by integration tests (tag: integration), not unit tests
+    - meter\.go$               # otel glue — error branches unreachable with noop meter
 
 # File name of go-test-coverage breakdown file, which can be used to
 # analyze coverage difference.

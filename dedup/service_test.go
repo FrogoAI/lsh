@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.opentelemetry.io/otel/metric/noop"
+
 	"github.com/FrogoAI/lsh/v2"
 	"github.com/FrogoAI/lsh/v2/repositories"
 	"github.com/FrogoAI/lsh/v2/repositories/memory"
@@ -466,6 +468,49 @@ func TestRecordFromBins_Branches(t *testing.T) {
 				t.Errorf("ID: got %s, want %s", rec.ID, tc.wantID)
 			}
 		})
+	}
+}
+
+func TestUpsert_WithMetrics(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+
+	svc, err := NewService(repo, defaultConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	m := noop.NewMeterProvider().Meter("test")
+
+	inst, err := lsh.NewInstruments(m, "lsh.dedup.")
+	if err != nil {
+		t.Fatalf("NewInstruments: %v", err)
+	}
+
+	svc.WithMetrics(inst)
+
+	// Novel -> ResultNew
+	_, err = svc.Upsert(ctx, "grp", "maxim@weavers.team")
+	if err != nil {
+		t.Fatalf("novel: %v", err)
+	}
+
+	// Exact duplicate -> ResultL1Hit
+	_, err = svc.Upsert(ctx, "grp", "maxim@weavers.team")
+	if err != nil {
+		t.Fatalf("l1 hit: %v", err)
+	}
+
+	// Similar -> ResultMatch
+	_, err = svc.Upsert(ctx, "grp", "maxim@weavets.team")
+	if err != nil {
+		t.Fatalf("match: %v", err)
+	}
+
+	// Same similar again -> ResultL2Hit
+	_, err = svc.Upsert(ctx, "grp", "maxim@weavets.team")
+	if err != nil {
+		t.Fatalf("l2 hit: %v", err)
 	}
 }
 

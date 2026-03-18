@@ -28,11 +28,10 @@ func NewRepository(opts ...Option) *Repository {
 	return r
 }
 
-// Option configures the memory repository.
+// Option configures a memory Repository.
 type Option func(*Repository)
 
-// WithMaxBucketReps sets the maximum number of representatives per bucket.
-// 0 (default) means unlimited.
+// WithMaxBucketReps limits the number of representatives per bucket (0 = unlimited).
 func WithMaxBucketReps(n int) Option {
 	return func(r *Repository) {
 		r.maxBucketReps = n
@@ -72,7 +71,7 @@ func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string
 }
 
 // setRep inserts or updates a representative, respecting the bucket cap.
-// Existing entries are always updated. New entries are rejected if at cap.
+// setRep inserts or updates a representative, rejecting new entries when at cap.
 func (r *Repository) setRep(m map[string]int64, memberID string, metadata int64) {
 	if _, exists := m[memberID]; exists {
 		m[memberID] = metadata

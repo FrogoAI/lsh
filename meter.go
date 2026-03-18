@@ -30,9 +30,8 @@ const (
 	ResultNew   = "new"
 )
 
-// Instruments holds pre-built OpenTelemetry instruments for an LSH service.
-// Created once via NewInstruments and injected into the service.
-// All fields are safe for concurrent use (otel instruments are thread-safe).
+// Instruments holds pre-built OpenTelemetry metric instruments for an LSH service.
+// All fields are thread-safe (otel instruments are safe for concurrent use).
 type Instruments struct {
 	UpsertDuration     metric.Float64Histogram
 	UpsertTotal        metric.Int64Counter
@@ -42,8 +41,8 @@ type Instruments struct {
 	BucketRepsReturned metric.Int64Histogram
 }
 
-// NewInstruments creates all LSH instruments from the given meter.
-// Prefix should be "lsh.vector." or "lsh.dedup." to differentiate algorithms.
+// NewInstruments creates all LSH metric instruments from the given meter.
+// Use prefix "lsh.vector." or "lsh.dedup." to differentiate algorithms.
 func NewInstruments(m metric.Meter, prefix string) (*Instruments, error) {
 	var (
 		inst Instruments

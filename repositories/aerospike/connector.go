@@ -44,12 +44,11 @@ func NewRepository(client *as.Client, namespace, set string, opts ...Option) *Re
 	return r
 }
 
-// Option configures the Aerospike repository.
+// Option configures an Aerospike Repository.
 type Option func(*Repository)
 
-// WithMaxBucketReps sets the maximum number of representatives per bucket.
-// When exceeded, the oldest entries (by key order) are trimmed.
-// 0 (default) means unlimited.
+// WithMaxBucketReps limits the number of representatives per bucket (0 = unlimited).
+// When exceeded, oldest entries by key order are trimmed.
 func WithMaxBucketReps(n int) Option {
 	return func(r *Repository) {
 		r.maxBucketReps = n

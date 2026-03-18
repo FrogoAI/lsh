@@ -50,8 +50,7 @@ func NewService(repo repositories.Storage, config *Config) (*Service, error) {
 	}, nil
 }
 
-// WithMetrics sets pre-built OpenTelemetry instruments for this service.
-// Create via lsh.NewInstruments(meter, "lsh.dedup.").
+// WithMetrics injects pre-built OpenTelemetry instruments.
 // If not called, metrics are silently skipped.
 func (s *Service) WithMetrics(m *lsh.Instruments) {
 	s.metrics = m

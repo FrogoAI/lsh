@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.opentelemetry.io/otel/metric/noop"
+
 	"github.com/FrogoAI/lsh/v2"
 	"github.com/FrogoAI/lsh/v2/repositories"
 	"github.com/FrogoAI/lsh/v2/repositories/memory"
@@ -395,6 +397,53 @@ func BenchmarkUpsert(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		vec[0] = float64(i)
 		_, _ = svc.Upsert(ctx, "grp", vec)
+	}
+}
+
+func TestUpsert_WithMetrics(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+
+	svc, err := NewService(repo, vectorConfig(4))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	m := noop.NewMeterProvider().Meter("test")
+
+	inst, err := lsh.NewInstruments(m, "lsh.vector.")
+	if err != nil {
+		t.Fatalf("NewInstruments: %v", err)
+	}
+
+	svc.WithMetrics(inst)
+
+	// All cache paths should record metrics without panicking
+	v1 := []float64{1.0, 2.0, 3.0, 4.0}
+	v2 := []float64{1.1, 2.1, 3.1, 4.1}
+
+	// Novel -> ResultNew
+	_, err = svc.Upsert(ctx, "grp", v1)
+	if err != nil {
+		t.Fatalf("novel: %v", err)
+	}
+
+	// Exact duplicate -> ResultL1Hit
+	_, err = svc.Upsert(ctx, "grp", v1)
+	if err != nil {
+		t.Fatalf("l1 hit: %v", err)
+	}
+
+	// Similar -> ResultMatch (and caches to L2)
+	_, err = svc.Upsert(ctx, "grp", v2)
+	if err != nil {
+		t.Fatalf("match: %v", err)
+	}
+
+	// Same similar again -> ResultL2Hit
+	_, err = svc.Upsert(ctx, "grp", v2)
+	if err != nil {
+		t.Fatalf("l2 hit: %v", err)
 	}
 }
 
