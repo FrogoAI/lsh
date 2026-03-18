@@ -7,6 +7,10 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
+
+	lru "github.com/hashicorp/golang-lru/v2"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/FrogoAI/lsh/v2"
 	"github.com/FrogoAI/lsh/v2/repositories"
@@ -22,16 +26,81 @@ type Service struct {
 	signaturePool *sync.Pool
 	groupLocks    [lsh.GroupLockShards]sync.Mutex
 	prefixCache   sync.Map
-	resolvedCache sync.Map
+	resolvedCache *lru.Cache[string, string]
+
+	mu      sync.RWMutex
+	meter   metric.Meter
+	metrics *instruments
+}
+
+type instruments struct {
+	upsertDuration     metric.Float64Histogram
+	upsertTotal        metric.Int64Counter
+	newIDTotal         metric.Int64Counter
+	candidateCount     metric.Int64Histogram
+	exactCompareCount  metric.Int64Histogram
+	bucketRepsReturned metric.Int64Histogram
 }
 
 func NewService(repo repositories.Storage, config *Config) *Service {
+	cacheSize := config.ResolvedCacheSize
+	if cacheSize <= 0 {
+		cacheSize = 1 //nolint:mnd
+	}
+
+	cache, _ := lru.New[string, string](cacheSize)
+
 	return &Service{
 		hasher:        NewHasher(config.Bands, config.Rows, config.Seed),
 		repo:          repo,
 		config:        config,
 		signaturePool: lsh.NewSignaturePool(config.SignatureSize()),
+		resolvedCache: cache,
 	}
+}
+
+// WithMeter sets the OpenTelemetry meter for this service.
+// If not called, metrics are silently skipped.
+func (s *Service) WithMeter(m metric.Meter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.meter = m
+	s.metrics = nil
+}
+
+func (s *Service) getMetrics() *instruments {
+	s.mu.RLock()
+
+	if s.metrics != nil {
+		defer s.mu.RUnlock()
+
+		return s.metrics
+	}
+
+	s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.metrics != nil {
+		return s.metrics
+	}
+
+	if s.meter == nil {
+		return nil
+	}
+
+	inst := &instruments{}
+	inst.upsertDuration, _ = s.meter.Float64Histogram(lsh.MetricUpsertDuration, metric.WithUnit("s"))
+	inst.upsertTotal, _ = s.meter.Int64Counter(lsh.MetricUpsertTotal)
+	inst.newIDTotal, _ = s.meter.Int64Counter(lsh.MetricNewIDTotal)
+	inst.candidateCount, _ = s.meter.Int64Histogram(lsh.MetricCandidateCount)
+	inst.exactCompareCount, _ = s.meter.Int64Histogram(lsh.MetricExactCompareCount)
+	inst.bucketRepsReturned, _ = s.meter.Int64Histogram(lsh.MetricBucketRepsReturned)
+
+	s.metrics = inst
+
+	return inst
 }
 
 func (s *Service) GetNewID(input string) string {
@@ -56,6 +125,9 @@ func (s *Service) getPrefix(group string) (string, error) {
 }
 
 func (s *Service) Upsert(ctx context.Context, group, input string) (string, error) {
+	start := time.Now()
+	met := s.getMetrics()
+
 	if input == "" {
 		return "", ErrEmptyInputString
 	}
@@ -69,18 +141,23 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 
 	for _, rec := range existing {
 		if rec.Key == bid {
+			s.recordUpsert(met, start, lsh.ResultL1Hit, group)
+
 			return bid, nil
 		}
 	}
 
-	if resolved, ok := s.resolvedCache.Load(bid); ok {
-		return resolved.(string), nil
+	if resolved, ok := s.resolvedCache.Get(bid); ok {
+		s.recordUpsert(met, start, lsh.ResultL2Hit, group)
+
+		return resolved, nil
 	}
 
 	if resolved, err := s.repo.GetValue("res:" + bid); err != nil {
 		return "", err
 	} else if resolved != "" {
-		s.resolvedCache.Store(bid, resolved)
+		s.resolvedCache.Add(bid, resolved)
+		s.recordUpsert(met, start, lsh.ResultL3Hit, group)
 
 		return resolved, nil
 	}
@@ -125,6 +202,8 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 
 	ids := s.collectCandidates(bucketKeys, allReps, int64(minLen), int64(maxLen))
 
+	s.recordCandidateStats(met, bucketKeys, allReps, ids)
+
 	if len(ids) > 0 {
 		rawRecords, err := s.repo.GetRecords(ids)
 		if err != nil {
@@ -138,6 +217,8 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 			}
 		}
 
+		exactChecks := 0
+
 		for _, id := range ids {
 			p, ok := profiles[id]
 			if !ok {
@@ -150,9 +231,11 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 				continue
 			}
 
+			exactChecks++
+
 			score := CalculateJaccardOptimized(inputTokens, p.Input, s.config.ShingleSize)
 			if score >= s.config.JaccardThreshold {
-				s.resolvedCache.Store(bid, p.ID)
+				s.resolvedCache.Add(bid, p.ID)
 
 				if err := s.repo.PutValue("res:"+bid, p.ID); err != nil {
 					slog.Warn("failed to persist resolved ID to L2 cache",
@@ -162,9 +245,14 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 					)
 				}
 
+				s.recordExactChecks(met, exactChecks)
+				s.recordUpsert(met, start, lsh.ResultMatch, group)
+
 				return p.ID, nil
 			}
 		}
+
+		s.recordExactChecks(met, exactChecks)
 	}
 
 	pool := worker.NewPool(ctx)
@@ -187,7 +275,15 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 		return s.repo.BatchSetRepresentative(bucketKeys, bid, int64(inputLen))
 	})
 
-	return bid, pool.Wait()
+	err = pool.Wait()
+
+	s.recordUpsert(met, start, lsh.ResultNew, group)
+
+	if met != nil {
+		met.newIDTotal.Add(ctx, 1, metric.WithAttributes(lsh.AttrGroup.String(group)))
+	}
+
+	return bid, err
 }
 
 // collectCandidates scans all bands, counts band overlap per candidate,
@@ -239,4 +335,45 @@ func (s *Service) collectCandidates(
 	}
 
 	return ids
+}
+
+func (s *Service) recordUpsert(met *instruments, start time.Time, result, group string) {
+	if met == nil {
+		return
+	}
+
+	ctx := context.Background()
+	attrs := metric.WithAttributes(lsh.AttrResult.String(result), lsh.AttrGroup.String(group))
+
+	met.upsertDuration.Record(ctx, time.Since(start).Seconds(), attrs)
+	met.upsertTotal.Add(ctx, 1, attrs)
+}
+
+func (s *Service) recordCandidateStats(
+	met *instruments,
+	bucketKeys []string,
+	allReps map[string][]repositories.Representative,
+	ids []string,
+) {
+	if met == nil {
+		return
+	}
+
+	ctx := context.Background()
+
+	totalReps := 0
+	for _, bk := range bucketKeys {
+		totalReps += len(allReps[bk])
+	}
+
+	met.bucketRepsReturned.Record(ctx, int64(totalReps))
+	met.candidateCount.Record(ctx, int64(len(ids)))
+}
+
+func (s *Service) recordExactChecks(met *instruments, count int) {
+	if met == nil {
+		return
+	}
+
+	met.exactCompareCount.Record(context.Background(), int64(count))
 }

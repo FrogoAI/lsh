@@ -4,8 +4,9 @@ package lsh
 type Config struct {
 	Bands              int   `env:"_BANDS" envDefault:"40"`
 	Rows               int   `env:"_ROWS" envDefault:"5"`
-	MaxBucketSize      int   `env:"_MAX_BUCKET_SIZE" envDefault:"200"`
+	MaxBucketSize      int   `env:"_MAX_BUCKET_SIZE" envDefault:"1000"`
 	MaxTotalCandidates int   `env:"_MAX_TOTAL_CANDIDATES" envDefault:"100"`
+	ResolvedCacheSize  int   `env:"_RESOLVED_CACHE_SIZE" envDefault:"500000"`
 	Seed               int64 `env:"_SEED" envDefault:"13374269"`
 }
 
