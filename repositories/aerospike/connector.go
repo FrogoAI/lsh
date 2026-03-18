@@ -123,8 +123,8 @@ func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string
 			continue
 		}
 
-		size, ok := bw.Record.Bins[binMembers].(int)
-		if !ok || size <= r.maxBucketReps {
+		size := extractMapSize(bw.Record.Bins[binMembers])
+		if size <= r.maxBucketReps {
 			continue
 		}
 
@@ -155,8 +155,8 @@ func (r *Repository) trimIfNeeded(wp *as.WritePolicy, key *as.Key, record *as.Re
 		return
 	}
 
-	size, ok := record.Bins[binMembers].(int)
-	if !ok || size <= r.maxBucketReps {
+	size := extractMapSize(record.Bins[binMembers])
+	if size <= r.maxBucketReps {
 		return
 	}
 
@@ -188,12 +188,7 @@ func (r *Repository) GetRepresentatives(bucketKey string) ([]repositories.Repres
 		return nil, err
 	}
 
-	rawMap, ok := record.Bins[binMembers].(map[interface{}]interface{})
-	if !ok {
-		return nil, nil
-	}
-
-	return parseRepresentatives(rawMap), nil
+	return parseBinRepresentatives(record.Bins[binMembers]), nil
 }
 
 func (r *Repository) BatchGetRepresentatives(bucketKeys []string) (map[string][]repositories.Representative, error) {
@@ -219,18 +214,32 @@ func (r *Repository) BatchGetRepresentatives(bucketKeys []string) (map[string][]
 			continue
 		}
 
-		rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{})
-		if !ok {
+		reps := parseBinRepresentatives(rec.Bins[binMembers])
+		if len(reps) == 0 {
 			continue
 		}
 
-		result[bucketKeys[i]] = parseRepresentatives(rawMap)
+		result[bucketKeys[i]] = reps
 	}
 
 	return result, nil
 }
 
-func parseRepresentatives(rawMap map[interface{}]interface{}) []repositories.Representative {
+// parseBinRepresentatives handles both Aerospike map formats:
+// - map[interface{}]interface{} (UNORDERED maps)
+// - []as.MapPair (KEY_ORDERED maps)
+func parseBinRepresentatives(bin interface{}) []repositories.Representative {
+	switch v := bin.(type) {
+	case map[interface{}]interface{}:
+		return parseMapRepresentatives(v)
+	case []as.MapPair:
+		return parsePairRepresentatives(v)
+	default:
+		return nil
+	}
+}
+
+func parseMapRepresentatives(rawMap map[interface{}]interface{}) []repositories.Representative {
 	reps := make([]repositories.Representative, 0, len(rawMap))
 
 	for k, v := range rawMap {
@@ -239,21 +248,56 @@ func parseRepresentatives(rawMap map[interface{}]interface{}) []repositories.Rep
 			continue
 		}
 
-		var meta int64
-
-		switch n := v.(type) {
-		case int:
-			meta = int64(n)
-		case int64:
-			meta = n
-		case float64:
-			meta = int64(n)
-		}
-
-		reps = append(reps, repositories.Representative{ID: idStr, Metadata: meta})
+		reps = append(reps, repositories.Representative{ID: idStr, Metadata: toInt64(v)})
 	}
 
 	return reps
+}
+
+func parsePairRepresentatives(pairs []as.MapPair) []repositories.Representative {
+	reps := make([]repositories.Representative, 0, len(pairs))
+
+	for _, p := range pairs {
+		idStr, ok := p.Key.(string)
+		if !ok {
+			continue
+		}
+
+		reps = append(reps, repositories.Representative{ID: idStr, Metadata: toInt64(p.Value)})
+	}
+
+	return reps
+}
+
+func toInt64(v interface{}) int64 {
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	default:
+		return 0
+	}
+}
+
+// extractMapSize extracts the map size from an Operate result.
+// The result of MapPut+MapSize via Operate is OpResults ([]interface{}),
+// where the second element is the map size.
+func extractMapSize(bin interface{}) int {
+	switch v := bin.(type) {
+	case int:
+		return v
+	case as.OpResults:
+		if len(v) >= 2 { //nolint:mnd
+			if size, ok := v[1].(int); ok {
+				return size
+			}
+		}
+	}
+
+	return 0
 }
 
 func (r *Repository) SaveRecord(key string, bins map[string]any) error {
