@@ -69,7 +69,7 @@ func TestComputeSignature_EdgeCases(t *testing.T) {
 		{
 			name:   "duplicate tokens are deduplicated by set",
 			tokens: []string{"a", "a", "a"},
-			check: func(t *testing.T, sig []uint64) {
+			check: func(t *testing.T, _ []uint64) {
 				h := NewHasher(5, 2, 42)
 				sigSingle := make([]uint64, 10)
 				h.ComputeSignature(set.NewGenericDataSet[string]("a"), sigSingle)

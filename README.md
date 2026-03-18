@@ -76,9 +76,9 @@ import (
 repo := memory.NewRepository()
 
 cfg := &vector.Config{}
-cfg.Bands = 20
+cfg.Bands = 40
 cfg.Rows = 5
-cfg.VectorDimensions = 18
+cfg.VectorDimensions = 20
 cfg.CosineThreshold = 0.7
 cfg.MaxTotalCandidates = 100
 cfg.Seed = 13374269
@@ -86,8 +86,8 @@ cfg.Seed = 13374269
 svc := vector.NewService(repo, cfg)
 
 // Two similar behavioral vectors get the same ID
-id1, _ := svc.Upsert(context.Background(), "org1", []float64{2.0, 1.0, 0.95, ...})
-id2, _ := svc.Upsert(context.Background(), "org1", []float64{3.0, 1.0, 0.98, ...})
+id1, _ := svc.Upsert(context.Background(), "org1", bonusHunter1Vec)
+id2, _ := svc.Upsert(context.Background(), "org1", bonusHunter2Vec)
 
 // id1 == id2 if cosine similarity >= threshold
 ```
@@ -117,7 +117,7 @@ cfg, err := dedup.GetConfigFromEnv()
 |---|---|---|
 | `VLSH_BANDS` | 40 | Number of LSH bands |
 | `VLSH_ROWS` | 5 | Rows per band |
-| `VLSH_VECTOR_DIMENSIONS` | 18 | Expected vector dimensionality |
+| `VLSH_VECTOR_DIMENSIONS` | 20 | Expected vector dimensionality |
 | `VLSH_COS_THRESHOLD` | 0.7 | Cosine similarity threshold |
 | `VLSH_MAX_TOTAL_CANDIDATES` | 100 | Max candidates to evaluate |
 | `VLSH_SEED` | 13374269 | RNG seed for hyperplanes |
@@ -260,16 +260,16 @@ This is important because:
 
 ## Scaling analysis (10M users)
 
-### Single record size (Bands=20, Rows=5, Dims=20)
+### Single record size (Bands=40, Rows=5, Dims=20)
 
 | Component | Bytes |
 |---|---|
 | Key (base64url SHA256[:16]) | 22 |
 | Vector (20 x float64) | 160 |
-| Signature (100 x uint64) | 800 |
+| Signature (200 x uint64) | 1,600 |
 | Group string | ~20 |
 | Overhead (headers, bin names) | ~90 |
-| **Total** | **~1.1 KB** |
+| **Total** | **~1.9 KB** |
 
 ### Storage at scale
 
@@ -307,6 +307,28 @@ With multi-probe ranking, recall is maintained regardless of cluster count. The 
 ### Precision guarantee
 
 The algorithm guarantees: if input V is resolved to representative R, then `ExactCosine(V, R.Vector) >= CosineThreshold`. This is enforced by the exact verification step. The estimated similarity filter (signature comparison) uses a margin to avoid false negatives but the final decision is always exact.
+
+## Per-bucket eviction cap
+
+Both repository implementations accept `WithMaxBucketReps(n)` to limit the number of representatives per bucket. This prevents bucket records from exceeding Aerospike's `write-block-size` (default 1 MB) regardless of cluster count.
+
+```go
+// Memory (tests)
+repo := memory.NewRepository(memory.WithMaxBucketReps(10000))
+
+// Aerospike (production)
+repo := aerospike.NewRepository(client, ns, set, aerospike.WithMaxBucketReps(10000))
+```
+
+With `MaxBucketReps=10000`: each bucket record stays under **450 KB**, supporting up to **320K clusters** before any eviction. 0 (default) means unlimited.
+
+When a bucket is at cap, new representatives are silently rejected (memory) or oldest entries are trimmed by key order (Aerospike). Existing entries can always be updated.
+
+## API note: userID vs vector-derived ID
+
+The `po_clarification.md` spec shows `Upsert(ctx, group, userID, vector)` with an explicit user identifier. The current implementation uses `Upsert(ctx, group, vector)` and derives the ID deterministically from the vector content via SHA256.
+
+This is intentional: the `behavioural_id` identifies a **behavior pattern**, not a user. Two different users with identical behavior vectors get the same `behavioural_id`. The consumer (scoring engine) maintains the `user -> behavioural_id` mapping externally by storing the returned ID on the enriched event.
 
 ## Known issues and mitigations
 
