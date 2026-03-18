@@ -326,9 +326,9 @@ When a bucket is at cap, new representatives are silently rejected (memory) or o
 
 ## API note: userID vs vector-derived ID
 
-The `po_clarification.md` spec shows `Upsert(ctx, group, userID, vector)` with an explicit user identifier. The current implementation uses `Upsert(ctx, group, vector)` and derives the ID deterministically from the vector content via SHA256.
+The `behavioural_id` returned by `Upsert` is derived deterministically from the **vector content** (SHA256), not from a user identifier. This is intentional: the ID identifies a **behavior pattern**, not a user. Two different users with identical behavior vectors get the same `behavioural_id`.
 
-This is intentional: the `behavioural_id` identifies a **behavior pattern**, not a user. Two different users with identical behavior vectors get the same `behavioural_id`. The consumer (scoring engine) maintains the `user -> behavioural_id` mapping externally by storing the returned ID on the enriched event.
+The consumer (scoring engine) maintains the `user -> behavioural_id` mapping externally by storing the returned ID on the enriched event.
 
 ## Known issues and mitigations
 

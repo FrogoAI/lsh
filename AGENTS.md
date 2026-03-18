@@ -39,10 +39,7 @@ lsh (root)                Core toolkit: banding, signature pools, lock sharding,
 
 ## Design documents (root)
 
-- `po_clarification.md` — **PO requirements** for behavioural_id: fraud scenarios, feature vector (20 dims), affiliate detection, hot-bucket analysis. This is the primary business requirements doc.
-- `lsh.md` — **Original adaptation plan** from string dedup to vector clustering. Historical — the implementation has evolved beyond this (Upsert pattern instead of Index+FindSimilar, representative storage instead of member lists).
-
-**When to consult**: before making API or algorithm changes, check `po_clarification.md` for business constraints. `lsh.md` is useful for understanding the MinHash-to-Hyperplane migration rationale.
+- `lsh.md` — **Original adaptation plan** from string dedup to vector clustering. Historical — the implementation has evolved beyond this (Upsert pattern instead of Index+FindSimilar, representative storage instead of member lists). Useful for understanding the MinHash-to-Hyperplane migration rationale.
 
 ## source/ directory
 
