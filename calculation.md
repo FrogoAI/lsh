@@ -20,7 +20,7 @@ if err := cfg.Validate(); err != nil {
 
 | Config | Approximate threshold | Strict threshold | Constraint |
 |---|---|---|---|
-| Vector B=40, R=5 | -0.15 | 0.7 | -0.15 < 0.7 PASS |
+| Vector B=40, R=5 | -0.15 | 0.5 | -0.15 < 0.5 PASS |
 | Dedup B=40, R=5 | 0.478 | 0.6 | 0.478 < 0.6 PASS |
 | Dedup B=40, R=8 | 0.644 | 0.6 | 0.644 >= 0.6 **FAIL** (6.5% recall) |
 
@@ -52,7 +52,7 @@ P(any of B bands) = 1 - (1 - P(one band))^B
 
 Where `s` = cosine similarity, `B` = bands, `R` = rows per band.
 
-### Recommended config: B=40, R=5, CosineThreshold=0.7
+### Recommended config: B=40, R=5, CosineThreshold=0.5
 
 | Cosine (s) | P(agree) | P(one band) | P(any band) | Expected bands | Interpretation |
 |:---:|:---:|:---:|:---:|:---:|---|
@@ -70,7 +70,7 @@ Where `s` = cosine similarity, `B` = bands, `R` = rows per band.
 
 **Approximate threshold** (P(any)=50%): s ~ -0.15 (below zero -- irrelevant for behavioral vectors which always have positive cosine).
 
-**Key insight**: At CosineThreshold=0.7, recall is **99.997%** (miss rate 0.003%). Noise below threshold is filtered by `collectCandidates` band overlap ranking -- true matches have ~9 bands in common, noise has 1-3.
+**Key insight**: At CosineThreshold=0.5, recall is **99.6%** (miss rate 0.4%). At CosineThreshold=0.7, recall reaches 99.997%. Noise below threshold is filtered by `collectCandidates` band overlap ranking -- true matches at cos=0.5 have ~5 bands in common, noise at cos=0.1 has ~2.
 
 ### Alternative configs for comparison
 
@@ -134,12 +134,12 @@ VLSH_ROWS=5
 VLSH_MAX_BUCKET_SIZE=1000        # increased from 200 to reduce trimming
 VLSH_MAX_TOTAL_CANDIDATES=100
 VLSH_VECTOR_DIMENSIONS=20
-VLSH_COS_THRESHOLD=0.7
+VLSH_COS_THRESHOLD=0.5
 VLSH_SEED=13374269
 VLSH_RESOLVED_CACHE_SIZE=500000
 ```
 
-**Constraint check**: approximate threshold (-0.15) < CosineThreshold (0.7) -- PASS.
+**Constraint check**: approximate threshold (-0.15) < CosineThreshold (0.5) -- PASS.
 
 ---
 
@@ -298,7 +298,7 @@ This is a fundamental property of the two hash families:
 ### Rules of thumb
 
 1. **Never reduce B below 40** for fraud detection -- recall is not negotiable
-2. **R=5 is the sweet spot** for B=40 -- gives 99.997% recall at cosine 0.7 and 96.1% at Jaccard 0.6
+2. **R=5 is the sweet spot** for B=40 -- gives 99.6% recall at cosine 0.5 and 96.1% at Jaccard 0.6
 3. **MaxBucketSize** should be 5-10x the expected cluster size. For behavioral vectors with max ~200 users per pattern, 1000 is safe.
 4. **MaxTotalCandidates=100** is sufficient -- true matches have 9+ band overlap and always rank in top 100
 5. **Changing B or R invalidates all buckets** (config version prefix changes). Plan for bucket rebuild after config change.

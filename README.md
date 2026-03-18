@@ -79,7 +79,7 @@ cfg := &vector.Config{}
 cfg.Bands = 40
 cfg.Rows = 5
 cfg.VectorDimensions = 20
-cfg.CosineThreshold = 0.7
+cfg.CosineThreshold = 0.5
 cfg.MaxTotalCandidates = 100
 cfg.Seed = 13374269
 
@@ -118,7 +118,7 @@ cfg, err := dedup.GetConfigFromEnv()
 | `VLSH_BANDS` | 40 | Number of LSH bands |
 | `VLSH_ROWS` | 5 | Rows per band |
 | `VLSH_VECTOR_DIMENSIONS` | 20 | Expected vector dimensionality |
-| `VLSH_COS_THRESHOLD` | 0.7 | Cosine similarity threshold |
+| `VLSH_COS_THRESHOLD` | 0.5 | Cosine similarity threshold |
 | `VLSH_MAX_TOTAL_CANDIDATES` | 100 | Max candidates to evaluate |
 | `VLSH_SEED` | 13374269 | RNG seed for hyperplanes |
 
@@ -298,7 +298,7 @@ The dominant cost at 10M users is the **resolved cache** (~93 bytes per resolved
 
 With multi-probe ranking, recall is maintained regardless of cluster count. The system searches all bands and ranks by overlap. `MaxTotalCandidates` limits only the verification step (record loading + similarity check), not band scanning.
 
-| Clusters | MaxTotalCandidates | Recall (cos=0.7) |
+| Clusters | MaxTotalCandidates | Recall (cos=0.5) |
 |---|---|---|
 | 20 | 100 | 100% |
 | 100 | 50 | 97% |

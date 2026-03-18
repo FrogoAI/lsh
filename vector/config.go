@@ -15,7 +15,7 @@ const EnvPrefix = "VLSH"
 type Config struct {
 	lsh.Config
 	VectorDimensions int     `env:"_VECTOR_DIMENSIONS" envDefault:"20"`
-	CosineThreshold  float64 `env:"_COS_THRESHOLD" envDefault:"0.7"`
+	CosineThreshold  float64 `env:"_COS_THRESHOLD" envDefault:"0.5"`
 }
 
 func GetConfigFromEnv() (*Config, error) {
