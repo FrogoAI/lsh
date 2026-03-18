@@ -4,23 +4,32 @@ package aerospike
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
+
+	"github.com/FrogoAI/lsh/v2/testdata"
 )
 
-const (
-	testHost      = "127.0.0.1"
-	testPort      = 3000
-	testNamespace = "test"
-	testSet       = "integration"
-)
+const testSet = "integration"
+
+func TestMain(m *testing.M) {
+	if err := testdata.WaitForAerospike(90 * time.Second); err != nil {
+		fmt.Fprintf(os.Stderr, "aerospike: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Exit(m.Run())
+}
 
 func newTestClient(t *testing.T) *as.Client {
 	t.Helper()
 
-	client, err := as.NewClient(testHost, testPort)
+	client, err := as.NewClient(testdata.Host, testdata.Port)
 	if err != nil {
 		t.Fatalf("failed to connect to Aerospike: %v", err)
 	}
@@ -33,7 +42,7 @@ func newTestClient(t *testing.T) *as.Client {
 func truncateSet(t *testing.T, client *as.Client) {
 	t.Helper()
 
-	err := client.Truncate(nil, testNamespace, testSet, nil)
+	err := client.Truncate(nil, testdata.Namespace, testSet, nil)
 	if err != nil {
 		t.Logf("truncate warning (may be empty): %v", err)
 	}
@@ -43,7 +52,7 @@ func TestSetRepresentative_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	err := repo.SetRepresentative("bucket1", "user1", 42)
 	if err != nil {
@@ -68,7 +77,7 @@ func TestSetRepresentative_Idempotent_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	_ = repo.SetRepresentative("bucket1", "user1", 10)
 	_ = repo.SetRepresentative("bucket1", "user1", 20)
@@ -88,7 +97,7 @@ func TestBatchSetRepresentative_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	err := repo.BatchSetRepresentative([]string{"b1", "b2", "b3"}, "user1", 5)
 	if err != nil {
@@ -115,7 +124,7 @@ func TestMaxBucketReps_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet, WithMaxBucketReps(3))
+	repo := NewRepository(client, testdata.Namespace, testSet, WithMaxBucketReps(3))
 
 	for i := 0; i < 10; i++ {
 		err := repo.SetRepresentative("capped", "u"+strconv.Itoa(i), int64(i))
@@ -138,7 +147,7 @@ func TestBatchMaxBucketReps_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet, WithMaxBucketReps(5))
+	repo := NewRepository(client, testdata.Namespace, testSet, WithMaxBucketReps(5))
 
 	for i := 0; i < 20; i++ {
 		err := repo.BatchSetRepresentative([]string{"bc1", "bc2"}, "u"+strconv.Itoa(i), int64(i))
@@ -160,7 +169,7 @@ func TestSaveAndGetRecords_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	bins := map[string]any{
 		"v": []float64{1.0, 2.0, 3.0},
@@ -195,7 +204,7 @@ func TestPutAndGetValue_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	err := repo.PutValue("key1", "value1")
 	if err != nil {
@@ -225,7 +234,7 @@ func TestGetRepresentatives_Missing_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	reps, err := repo.GetRepresentatives("nonexistent")
 	if err != nil {
@@ -242,7 +251,7 @@ func TestDedupUpsert_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	// We can't import dedup here (circular), so test the storage operations
 	// that dedup.Upsert would perform.
@@ -287,7 +296,7 @@ func TestVectorUpsert_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	// Simulate: novel vector stores record + representatives
 	vec := []float64{1.0, 2.0, 3.0, 4.0, 5.0}
@@ -352,7 +361,7 @@ func TestFullDedupFlow_Integration(t *testing.T) {
 	client := newTestClient(t)
 	truncateSet(t, client)
 
-	repo := NewRepository(client, testNamespace, testSet)
+	repo := NewRepository(client, testdata.Namespace, testSet)
 
 	// Verify the storage interface contract with a multi-step workflow:
 	// 1. Store representative

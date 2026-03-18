@@ -4,28 +4,41 @@ package vector
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"os"
 	"testing"
+	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
 
 	"github.com/FrogoAI/lsh/v2"
 	asrepo "github.com/FrogoAI/lsh/v2/repositories/aerospike"
+	"github.com/FrogoAI/lsh/v2/testdata"
 )
+
+func TestMain(m *testing.M) {
+	if err := testdata.WaitForAerospike(90 * time.Second); err != nil {
+		fmt.Fprintf(os.Stderr, "aerospike: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Exit(m.Run())
+}
 
 func aerospikeRepo(t *testing.T) *asrepo.Repository {
 	t.Helper()
 
-	client, err := as.NewClient("127.0.0.1", 3000)
+	client, err := as.NewClient(testdata.Host, testdata.Port)
 	if err != nil {
 		t.Fatalf("failed to connect to Aerospike: %v", err)
 	}
 
 	t.Cleanup(func() { client.Close() })
 
-	_ = client.Truncate(nil, "test", "vector_int", nil)
+	_ = client.Truncate(nil, testdata.Namespace, "vector_int", nil)
 
-	return asrepo.NewRepository(client, "test", "vector_int")
+	return asrepo.NewRepository(client, testdata.Namespace, "vector_int")
 }
 
 func integrationConfig(dims int) *Config {
