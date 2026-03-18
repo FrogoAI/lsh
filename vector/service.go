@@ -2,22 +2,20 @@ package vector
 
 import (
 	"context"
-	"sort"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
+	"log/slog"
+	"math"
 	"sync"
-	"time"
 
-	"github.com/FrogoAI/lsh"
-	"github.com/FrogoAI/lsh/repositories"
+	"github.com/FrogoAI/lsh/v2"
+	"github.com/FrogoAI/lsh/v2/repositories"
 	"github.com/FrogoAI/multiproc/worker"
 	"github.com/FrogoAI/set"
 )
 
 const cosineMargin = 0.1
-
-type Match struct {
-	UserID     string
-	Similarity float64
-}
 
 type Service struct {
 	hasher        *Hasher
@@ -26,6 +24,7 @@ type Service struct {
 	signaturePool *sync.Pool
 	groupLocks    [lsh.GroupLockShards]sync.Mutex
 	prefixCache   sync.Map
+	resolvedCache sync.Map
 }
 
 func NewService(repo repositories.Storage, config *Config) *Service {
@@ -35,6 +34,19 @@ func NewService(repo repositories.Storage, config *Config) *Service {
 		config:        config,
 		signaturePool: lsh.NewSignaturePool(config.SignatureSize()),
 	}
+}
+
+// GetNewID returns a deterministic ID derived from the vector content.
+func (s *Service) GetNewID(vector []float64) string {
+	buf := make([]byte, len(vector)*8) //nolint:mnd
+
+	for i, v := range vector {
+		binary.LittleEndian.PutUint64(buf[i*8:], math.Float64bits(v)) //nolint:mnd
+	}
+
+	hash := sha256.Sum256(buf)
+
+	return base64.RawURLEncoding.EncodeToString(hash[:16])
 }
 
 func (s *Service) getPrefix(group string) (string, error) {
@@ -52,14 +64,41 @@ func (s *Service) getPrefix(group string) (string, error) {
 	return prefix, nil
 }
 
-// Index adds or updates a user's vector in the LSH index.
-func (s *Service) Index(ctx context.Context, group, userID string, vector []float64) error {
+// Upsert indexes a vector and returns a behavioural ID.
+// If a similar vector already exists (cosine >= threshold), returns the existing ID.
+// Otherwise stores the vector and returns a new ID.
+func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (string, error) {
 	if len(vector) == 0 {
-		return ErrEmptyVector
+		return "", ErrEmptyVector
 	}
 
 	if len(vector) != s.config.VectorDimensions {
-		return ErrWrongDimension
+		return "", ErrWrongDimension
+	}
+
+	bid := s.GetNewID(vector)
+
+	existing, err := s.repo.GetRecords([]string{bid})
+	if err != nil {
+		return "", err
+	}
+
+	for _, rec := range existing {
+		if rec.Key == bid {
+			return bid, nil
+		}
+	}
+
+	if resolved, ok := s.resolvedCache.Load(bid); ok {
+		return resolved.(string), nil
+	}
+
+	if resolved, err := s.repo.GetValue("res:" + bid); err != nil {
+		return "", err
+	} else if resolved != "" {
+		s.resolvedCache.Store(bid, resolved)
+
+		return resolved, nil
 	}
 
 	shard := lsh.GroupShard(group)
@@ -75,72 +114,19 @@ func (s *Service) Index(ctx context.Context, group, userID string, vector []floa
 
 	keys, err := lsh.ComputeBands(sig, s.config.Bands, s.config.Rows)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	prefix, err := s.getPrefix(group)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	bucketKeys := lsh.PrefixKeys(prefix, keys)
 
-	pool := worker.NewPool(ctx)
-
-	pool.Execute(func(_ context.Context) error {
-		sigCopy := make([]uint64, len(sig))
-		copy(sigCopy, sig)
-
-		rec := Record{
-			ID:        userID,
-			Vector:    vector,
-			GroupID:   group,
-			Signature: sigCopy,
-		}
-
-		return s.repo.SaveRecord(userID, rec.toBins())
-	})
-
-	pool.Execute(func(_ context.Context) error {
-		return s.repo.BatchAddBucketMember(bucketKeys, userID, time.Now().Unix())
-	})
-
-	return pool.Wait()
-}
-
-// FindSimilar returns users with vectors similar to the query vector,
-// verified by exact cosine similarity, sorted descending by score.
-func (s *Service) FindSimilar(_ context.Context, group string, vector []float64, topK int) ([]Match, error) {
-	if len(vector) == 0 {
-		return nil, ErrEmptyVector
-	}
-
-	if len(vector) != s.config.VectorDimensions {
-		return nil, ErrWrongDimension
-	}
-
-	sigPtr := s.signaturePool.Get().(*[]uint64)
-	defer s.signaturePool.Put(sigPtr)
-
-	sig := *sigPtr
-
-	s.hasher.ComputeSignature(vector, sig)
-
-	keys, err := lsh.ComputeBands(sig, s.config.Bands, s.config.Rows)
+	allReps, err := s.repo.BatchGetRepresentatives(bucketKeys)
 	if err != nil {
-		return nil, err
-	}
-
-	prefix, err := s.getPrefix(group)
-	if err != nil {
-		return nil, err
-	}
-
-	bucketKeys := lsh.PrefixKeys(prefix, keys)
-
-	allMembers, err := s.repo.BatchGetBucketMembers(bucketKeys)
-	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	candidateSet := set.NewGenericDataSet[string]()
@@ -150,99 +136,74 @@ func (s *Service) FindSimilar(_ context.Context, group string, vector []float64,
 			break
 		}
 
-		members := allMembers[bk]
-		if len(members) > s.config.MaxBucketSize {
-			continue
-		}
-
-		for _, m := range members {
-			candidateSet.Add(m.ID)
+		for _, rep := range allReps[bk] {
+			candidateSet.Add(rep.ID)
 		}
 	}
 
-	if candidateSet.Count() == 0 {
-		return nil, nil
-	}
+	if candidateSet.Count() > 0 {
+		ids := candidateSet.ToSlice()
 
-	ids := candidateSet.ToSlice()
-
-	rawRecords, err := s.repo.GetRecords(ids)
-	if err != nil {
-		return nil, err
-	}
-
-	var matches []Match
-
-	for _, raw := range rawRecords {
-		rec, ok := recordFromBins(raw)
-		if !ok {
-			continue
+		rawRecords, err := s.repo.GetRecords(ids)
+		if err != nil {
+			return "", err
 		}
 
-		est := EstimateCosine(sig, rec.Signature)
-		if est < (s.config.CosineThreshold - cosineMargin) {
-			continue
+		profiles := make(map[string]Record, len(rawRecords))
+		for _, raw := range rawRecords {
+			if r, ok := recordFromBins(raw); ok {
+				profiles[r.ID] = r
+			}
 		}
 
-		exact := ExactCosine(vector, rec.Vector)
-		if exact >= s.config.CosineThreshold {
-			matches = append(matches, Match{UserID: rec.ID, Similarity: exact})
+		for _, id := range ids {
+			p, ok := profiles[id]
+			if !ok {
+				continue
+			}
+
+			estCosine := EstimateCosine(sig, p.Signature)
+
+			if estCosine < (s.config.CosineThreshold - cosineMargin) {
+				continue
+			}
+
+			score := ExactCosine(vector, p.Vector)
+			if score >= s.config.CosineThreshold {
+				s.resolvedCache.Store(bid, p.ID)
+
+				if err := s.repo.PutValue("res:"+bid, p.ID); err != nil {
+					slog.Warn("failed to persist resolved ID to L2 cache",
+						slog.String("bid", bid),
+						slog.String("resolved", p.ID),
+						slog.Any("error", err),
+					)
+				}
+
+				return p.ID, nil
+			}
 		}
 	}
 
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Similarity > matches[j].Similarity
+	pool := worker.NewPool(ctx)
+
+	pool.Execute(func(_ context.Context) error {
+		sigCopy := make([]uint64, len(sig))
+		copy(sigCopy, sig)
+
+		rec := Record{
+			ID:        bid,
+			Vector:    vector,
+			GroupID:   group,
+			Signature: sigCopy,
+		}
+
+		return s.repo.SaveRecord(bid, rec.toBins())
 	})
 
-	if topK > 0 && len(matches) > topK {
-		matches = matches[:topK]
-	}
+	pool.Execute(func(_ context.Context) error {
+		return s.repo.BatchSetRepresentative(bucketKeys, bid, 0)
+	})
 
-	return matches, nil
-}
-
-// GetBucketPeers returns all user IDs sharing at least one LSH bucket with the query vector.
-// No verification step — faster than FindSimilar.
-func (s *Service) GetBucketPeers(_ context.Context, group string, vector []float64) ([]string, error) {
-	if len(vector) == 0 {
-		return nil, ErrEmptyVector
-	}
-
-	if len(vector) != s.config.VectorDimensions {
-		return nil, ErrWrongDimension
-	}
-
-	sigPtr := s.signaturePool.Get().(*[]uint64)
-	defer s.signaturePool.Put(sigPtr)
-
-	sig := *sigPtr
-
-	s.hasher.ComputeSignature(vector, sig)
-
-	keys, err := lsh.ComputeBands(sig, s.config.Bands, s.config.Rows)
-	if err != nil {
-		return nil, err
-	}
-
-	prefix, err := s.getPrefix(group)
-	if err != nil {
-		return nil, err
-	}
-
-	bucketKeys := lsh.PrefixKeys(prefix, keys)
-
-	allMembers, err := s.repo.BatchGetBucketMembers(bucketKeys)
-	if err != nil {
-		return nil, err
-	}
-
-	peerSet := set.NewGenericDataSet[string]()
-
-	for _, bk := range bucketKeys {
-		for _, m := range allMembers[bk] {
-			peerSet.Add(m.ID)
-		}
-	}
-
-	return peerSet.ToSlice(), nil
+	return bid, pool.Wait()
 }

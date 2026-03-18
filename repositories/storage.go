@@ -1,8 +1,9 @@
 package repositories
 
-// BucketMember represents a single member in a bucket with opaque metadata.
-// For string dedup, Metadata = shingle length. For vectors, Metadata = timestamp.
-type BucketMember struct {
+// Representative is a cluster leader stored in a bucket.
+// Each bucket maps memberID -> metadata (set semantics, not append).
+// For dedup: Metadata = shingle length. For vectors: Metadata = 0.
+type Representative struct {
 	ID       string
 	Metadata int64
 }
@@ -14,13 +15,21 @@ type Record struct {
 }
 
 // Storage is a generic persistence interface with no domain knowledge.
-// It stores buckets (maps of members) and opaque records (key-value bins).
+// Buckets store representatives (bounded, set-keyed by memberID).
+// Records store full data (vectors, signatures, etc.).
 type Storage interface {
-	// Bucket operations
-	AddBucketMember(bucketKey, memberID string, metadata int64) error
-	BatchAddBucketMember(bucketKeys []string, memberID string, metadata int64) error
-	GetBucketMembers(bucketKey string) ([]BucketMember, error)
-	BatchGetBucketMembers(bucketKeys []string) (map[string][]BucketMember, error)
+	// SetRepresentative upserts a representative into a bucket.
+	// If memberID already exists in the bucket, metadata is updated (idempotent).
+	SetRepresentative(bucketKey, memberID string, metadata int64) error
+
+	// BatchSetRepresentative upserts a representative into multiple buckets.
+	BatchSetRepresentative(bucketKeys []string, memberID string, metadata int64) error
+
+	// GetRepresentatives returns all representatives in a bucket.
+	GetRepresentatives(bucketKey string) ([]Representative, error)
+
+	// BatchGetRepresentatives returns representatives for multiple buckets.
+	BatchGetRepresentatives(bucketKeys []string) (map[string][]Representative, error)
 
 	// Record operations (opaque key-value)
 	SaveRecord(key string, bins map[string]any) error

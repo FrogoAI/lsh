@@ -3,78 +3,88 @@ package memory
 import (
 	"sync"
 
-	"github.com/FrogoAI/lsh/repositories"
+	"github.com/FrogoAI/lsh/v2/repositories"
 )
 
 type Repository struct {
 	mu      sync.RWMutex
-	buckets map[string][]repositories.BucketMember
+	buckets map[string]map[string]int64 // bucketKey -> memberID -> metadata
 	records map[string]map[string]any
 	values  map[string]string
 }
 
 func NewRepository() *Repository {
 	return &Repository{
-		buckets: make(map[string][]repositories.BucketMember),
+		buckets: make(map[string]map[string]int64),
 		records: make(map[string]map[string]any),
 		values:  make(map[string]string),
 	}
 }
 
-func (r *Repository) AddBucketMember(bucketKey, memberID string, metadata int64) error {
+func (r *Repository) SetRepresentative(bucketKey, memberID string, metadata int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.buckets[bucketKey] = append(r.buckets[bucketKey], repositories.BucketMember{
-		ID:       memberID,
-		Metadata: metadata,
-	})
+	m, ok := r.buckets[bucketKey]
+	if !ok {
+		m = make(map[string]int64)
+		r.buckets[bucketKey] = m
+	}
+
+	m[memberID] = metadata
 
 	return nil
 }
 
-func (r *Repository) BatchAddBucketMember(bucketKeys []string, memberID string, metadata int64) error {
+func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string, metadata int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for _, k := range bucketKeys {
-		r.buckets[k] = append(r.buckets[k], repositories.BucketMember{
-			ID:       memberID,
-			Metadata: metadata,
-		})
+		m, ok := r.buckets[k]
+		if !ok {
+			m = make(map[string]int64)
+			r.buckets[k] = m
+		}
+
+		m[memberID] = metadata
 	}
 
 	return nil
 }
 
-func (r *Repository) GetBucketMembers(bucketKey string) ([]repositories.BucketMember, error) {
+func (r *Repository) GetRepresentatives(bucketKey string) ([]repositories.Representative, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	members, ok := r.buckets[bucketKey]
+	m, ok := r.buckets[bucketKey]
 	if !ok {
 		return nil, nil
 	}
 
-	out := make([]repositories.BucketMember, len(members))
-	copy(out, members)
+	reps := make([]repositories.Representative, 0, len(m))
+	for id, meta := range m {
+		reps = append(reps, repositories.Representative{ID: id, Metadata: meta})
+	}
 
-	return out, nil
+	return reps, nil
 }
 
-func (r *Repository) BatchGetBucketMembers(bucketKeys []string) (map[string][]repositories.BucketMember, error) {
+func (r *Repository) BatchGetRepresentatives(bucketKeys []string) (map[string][]repositories.Representative, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make(map[string][]repositories.BucketMember, len(bucketKeys))
+	result := make(map[string][]repositories.Representative, len(bucketKeys))
 
 	for _, k := range bucketKeys {
-		members := r.buckets[k]
+		m := r.buckets[k]
 
-		out := make([]repositories.BucketMember, len(members))
-		copy(out, members)
+		reps := make([]repositories.Representative, 0, len(m))
+		for id, meta := range m {
+			reps = append(reps, repositories.Representative{ID: id, Metadata: meta})
+		}
 
-		result[k] = out
+		result[k] = reps
 	}
 
 	return result, nil

@@ -1,6 +1,6 @@
 package dedup
 
-import "github.com/FrogoAI/lsh/repositories"
+import "github.com/FrogoAI/lsh/v2/repositories"
 
 const (
 	binInput     = "i"

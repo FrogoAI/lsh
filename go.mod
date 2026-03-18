@@ -1,4 +1,4 @@
-module github.com/FrogoAI/lsh
+module github.com/FrogoAI/lsh/v2
 
 go 1.25.5
 

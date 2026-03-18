@@ -3,7 +3,7 @@ package vector
 import (
 	"testing"
 
-	"github.com/FrogoAI/lsh/repositories"
+	"github.com/FrogoAI/lsh/v2/repositories"
 )
 
 func TestRecordFromBins(t *testing.T) {

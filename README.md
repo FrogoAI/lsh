@@ -1,68 +1,331 @@
-🚀 High-Performance MinHash LSH for Go
+# lsh/v2
 
-A production-grade Locality Sensitive Hashing (LSH) implementation engineered for high-throughput deduplication, fraud detection, and similarity search. This library focuses on extreme CPU efficiency and zero-allocation hot paths.
-✨ Key Features
+Go library for **Locality-Sensitive Hashing** with two built-in use cases:
 
-    ⚡ Odd-Coefficient Optimization: Replaces expensive modulo arithmetic with implicit 264 overflow. By enforcing odd coefficients, we guarantee a mathematically perfect permutation with zero CPU overhead.
+- **String deduplication** — MinHash signatures + Jaccard similarity
+- **Vector behavioural ID** — random hyperplane signatures + cosine similarity
 
-    ♻️ Zero-Allocation Design: Utilizes sync.Pool for signature buffers and optimized slicing to eliminate GC pressure during heavy ingestion.
+Both share a common core (banding, pooling, sharding) and a pluggable storage layer.
 
-    🛡️ Hot-Bucket Protection: Includes a "Peek & Stub" strategy for Aerospike/Database layers to prevent OOM crashes when encountering "hot" tokens (millions of matches).
+## Architecture
 
-    🧩 Scalable Architecture: Decoupled storage interfaces supporting In-Memory and Aerospike (CDT-based) backends out of the box.
-
-    🧪 Mathematically Sound: Implements 3-char shingling and MinHash signatures with configurable P=1−(1−sr)b probability curves.
-
-📦 Installation
-
-```Bash
-go get github.com/FrogoAI/lsh
+```
+lsh (root)              Core toolkit: banding, signature pools, lock sharding, prefix hashing
+├── dedup/              String dedup use case (MinHash + Jaccard)
+├── vector/             Vector behavioural ID use case (Hyperplane + Cosine)
+└── repositories/       Storage interface + implementations
+    ├── memory/         In-memory (for tests)
+    └── aerospike/      Aerospike (for production)
 ```
 
-🚀 Quick Start
+The core package has **zero dependency on repositories** — it provides pure functions only.
+Each use case owns its config, hasher, similarity functions, and record serialization.
 
-```Go
-package main
+## Installation
 
+```sh
+go get github.com/FrogoAI/lsh/v2
+```
+
+## Usage
+
+### String deduplication
+
+Detects near-duplicate text. The flow: text -> shingles -> MinHash signature -> LSH bands -> representative lookup -> Jaccard verification.
+
+```go
 import (
-	"context"
-	
-	"github.com/FrogoAI/lsh"
-	"github.com/FrogoAI/lsh/repositories/memory"
+    "context"
+
+    "github.com/FrogoAI/lsh/v2/dedup"
+    "github.com/FrogoAI/lsh/v2/repositories/memory"
 )
 
-func main() {
-	// 1. Setup Config
-	cfg := &lsh.Config{
-		Bands:            20,
-		Rows:             5,
-		ShingleSize:      3,
-		JaccardThreshold: 0.6,
-		Seed:             13374269,
-	}
+repo := memory.NewRepository()
 
-	// 2. Initialize Service
-	repo := memory.New()
-	service := lsh.NewSimilarityService(repo, cfg)
+cfg := &dedup.Config{}
+cfg.Bands = 40
+cfg.Rows = 5
+cfg.ShingleSize = 3
+cfg.JaccardThreshold = 0.6
+cfg.MaxTotalCandidates = 100
+cfg.Seed = 13374269
 
-	// 3. Upsert a record
-	// Returns a new unique record id, or the existing ID if it's a duplicate.
-	id, _ := service.Upsert(context.Background(), "users", "John Doe")
+svc := dedup.NewService(repo, cfg)
+
+id1, _ := svc.Upsert(context.Background(), "group1", "the quick brown fox")
+id2, _ := svc.Upsert(context.Background(), "group1", "the quick brown fox jumps")
+
+// id1 == id2 if Jaccard similarity >= threshold
+```
+
+`Upsert` returns the ID of the matching existing record if a near-duplicate is found, or a new deterministic ID if the input is novel.
+
+### Vector behavioural ID
+
+Assigns a behavioural cluster ID to a float64 feature vector using cosine similarity.
+
+```go
+import (
+    "context"
+
+    "github.com/FrogoAI/lsh/v2/vector"
+    "github.com/FrogoAI/lsh/v2/repositories/memory"
+)
+
+repo := memory.NewRepository()
+
+cfg := &vector.Config{}
+cfg.Bands = 20
+cfg.Rows = 5
+cfg.VectorDimensions = 18
+cfg.CosineThreshold = 0.7
+cfg.MaxTotalCandidates = 100
+cfg.Seed = 13374269
+
+svc := vector.NewService(repo, cfg)
+
+// Two similar behavioral vectors get the same ID
+id1, _ := svc.Upsert(context.Background(), "org1", []float64{2.0, 1.0, 0.95, ...})
+id2, _ := svc.Upsert(context.Background(), "org1", []float64{3.0, 1.0, 0.98, ...})
+
+// id1 == id2 if cosine similarity >= threshold
+```
+
+## Configuration
+
+Both use cases read config from environment variables via [caarlos0/env](https://github.com/caarlos0/env).
+
+### dedup (prefix `LSH`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `LSH_BANDS` | 40 | Number of LSH bands |
+| `LSH_ROWS` | 5 | Rows per band |
+| `LSH_SHINGLE_SIZE` | 3 | Character n-gram size |
+| `LSH_JAC_THRESHOLD` | 0.6 | Jaccard similarity threshold |
+| `LSH_MAX_TOTAL_CANDIDATES` | 100 | Max candidates to evaluate |
+| `LSH_SEED` | 13374269 | RNG seed for hash functions |
+
+```go
+cfg, err := dedup.GetConfigFromEnv()
+```
+
+### vector (prefix `VLSH`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `VLSH_BANDS` | 40 | Number of LSH bands |
+| `VLSH_ROWS` | 5 | Rows per band |
+| `VLSH_VECTOR_DIMENSIONS` | 18 | Expected vector dimensionality |
+| `VLSH_COS_THRESHOLD` | 0.7 | Cosine similarity threshold |
+| `VLSH_MAX_TOTAL_CANDIDATES` | 100 | Max candidates to evaluate |
+| `VLSH_SEED` | 13374269 | RNG seed for hyperplanes |
+
+```go
+cfg, err := vector.GetConfigFromEnv()
+```
+
+## Storage backends
+
+Implement the `repositories.Storage` interface to plug in any backend:
+
+```go
+type Storage interface {
+    SetRepresentative(bucketKey, memberID string, metadata int64) error
+    BatchSetRepresentative(bucketKeys []string, memberID string, metadata int64) error
+    GetRepresentatives(bucketKey string) ([]Representative, error)
+    BatchGetRepresentatives(bucketKeys []string) (map[string][]Representative, error)
+    SaveRecord(key string, bins map[string]any) error
+    GetRecords(keys []string) ([]Record, error)
+    PutValue(key, value string) error
+    GetValue(key string) (string, error)
+    Close()
 }
 ```
 
-📐 Tuning the LSH Curve
+Built-in implementations:
+- `repositories/memory` — in-memory (tests and prototyping)
+- `repositories/aerospike` — Aerospike (production)
 
-The probability of two items sharing a bucket depends on their Jaccard similarity s, the number of bands b, and rows per band r.
+## How it works
 
-    Higher Recall (Catch more): Increase Bands.
+### Overview
 
-    Higher Precision (Fewer false positives): Increase Rows.
+```
+Input (text or vector)
+        |
+  1. Deterministic ID (SHA256)
+        |
+  2. L1 cache: exact record lookup --> HIT: return ID
+        |
+  3. L2 cache: resolved ID lookup --> HIT: return resolved ID
+        |
+  4. Compute LSH signature (MinHash or Hyperplane)
+        |
+  5. Split into B bands of R rows --> B bucket keys
+        |
+  6. Fetch representatives from matching buckets (bounded, small)
+        |
+  7. Compare input vs representatives:
+     - Estimated similarity (fast, signature-based)
+     - Exact similarity (precise, on full data)
+        |
+  8a. MATCH: cache resolution, return existing ID
+  8b. NO MATCH: save as new record + add as representative to buckets
+```
 
-🔬 Performance Optimizations
-The "Odd Coefficient" Trick
+### Step by step
 
-Standard MinHash often uses (ax+b)(modP). We utilize the CPU's natural behavior with 264 overflow. Because we ensure a is always odd, it remains coprime to 264, satisfying the requirement for a linear congruential generator to produce a full-period permutation.
-Aerospike CDT Implementation
+1. **Deterministic ID** — The input is hashed (SHA256, truncated to 128 bits, base64url-encoded) to produce a `memberID`. Same input always produces the same ID.
 
-The Aerospike repository uses Map CDTs (Collection Data Types). Instead of fetching a whole list of IDs, we use MapSizeOp to check the density of a bucket server-side. If a bucket is too "hot," we skip it without ever transferring the data over the wire.
+2. **L1 cache (record lookup)** — If a record with this ID already exists in storage, return it immediately. This handles exact duplicate inputs with zero LSH overhead.
+
+3. **L2 cache (resolved lookup)** — If this ID was previously resolved to another ID (i.e., it matched a representative), return the resolved ID. The L2 cache is persisted to storage (`PutValue`), surviving pod restarts.
+
+4. **Signature computation** — The input is converted to a fixed-size signature:
+   - *Dedup*: text -> character shingles -> MinHash signature (universal hashing with odd coefficients for implicit 2^64 overflow permutation)
+   - *Vector*: float64 vector -> random hyperplane projections -> binary signature (0/1 per hyperplane)
+
+5. **Banding** — The signature (B*R elements) is split into B bands of R rows each. Each band is hashed (xxhash) into a bucket key. This is the core LSH step: similar items collide in at least one band with high probability.
+
+6. **Representative lookup** — Each bucket stores a bounded set of **representatives** (cluster leaders), not all members. This is the key design choice — see [Representative-based storage](#representative-based-storage) below.
+
+7. **Similarity verification** — Candidates are first filtered by estimated similarity (cheap signature comparison), then verified with exact similarity (Jaccard or cosine). This two-stage filter reduces expensive comparisons.
+
+8. **Resolution** — If a match is found, the input's ID is mapped to the representative's ID and cached. If no match, the input becomes a new representative in all its buckets.
+
+### Tuning
+
+The probability of two items colliding in at least one band:
+
+```
+Jaccard (MinHash):    P = 1 - (1 - s^R)^B
+Cosine (Hyperplane):  P = 1 - (1 - (1 - arccos(s)/pi)^R)^B
+```
+
+- **Higher recall** (catch more similar items) -> increase `Bands`
+- **Higher precision** (fewer false positives) -> increase `Rows`
+
+Use `Config.CalculateApproximateThreshold()` to see the similarity at which collision probability is ~50% for your settings.
+
+## Representative-based storage
+
+### Problem: hot buckets
+
+The traditional LSH approach stores **all members** in each bucket. This creates two problems:
+
+1. **Unbounded growth** — With N users and only 2^R possible bucket values per band (e.g., 2^5 = 32 for binary hyperplane hashing), the average bucket holds N/32 members. At 1M users that is ~31,000 members per bucket.
+
+2. **Cascade failure** — When buckets exceed a size limit, they get skipped during queries. Items that should match can't find their candidates, become "novel" erroneously, and get added to buckets, making them even bigger.
+
+3. **Storage pressure** — In Aerospike, each bucket is one record with a CDT Map. A bucket with 31K entries (~1.4 MB) may exceed the write-block-size limit, cause write amplification, and transfer excessive data over the network.
+
+### Solution: store only representatives
+
+Each bucket stores **one entry per cluster** (the cluster leader / representative), not one per user. When a new item arrives:
+
+- If it matches a representative -> resolve to that representative's ID (no bucket write)
+- If it's novel -> save record, add self as representative to buckets
+
+The bucket uses **set semantics** (keyed by memberID, idempotent upsert). The number of entries per bucket is bounded by the number of distinct clusters, not the number of users.
+
+### Scaling characteristics
+
+| Scenario | Members per bucket (old) | Representatives per bucket (new) |
+|---|---|---|
+| 1M users, 1K clusters, Rows=5 | ~31,250 | ~31 |
+| 1M users, 10K clusters, Rows=5 | ~31,250 | ~312 |
+| 1M users, 1K clusters, Rows=10 | ~977 | ~1 |
+
+The representative count grows with the number of **distinct clusters**, not the number of users. This is typically orders of magnitude smaller.
+
+### Memory estimates (1M users, 1K clusters)
+
+| Component | Old (all members) | New (representatives) |
+|---|---|---|
+| Bucket data | ~2.7 GB (1M x 40 buckets x 68B) | ~2.7 MB (1K x 40 buckets x 68B) |
+| Record data | ~2.0 GB | ~2.0 GB (unchanged) |
+| Per-query network | ~55 MB (40 x 1.4 MB) | ~55 KB (40 x 1.4 KB) |
+| Aerospike record size | ~1.4 MB (may exceed limit) | ~2 KB |
+
+## Known issues and mitigations
+
+### 1. Binary hyperplane bucket cardinality
+
+**Issue**: With Rows=R, each band of the hyperplane hasher produces only 2^R possible bucket values. For R=5, that's 32 buckets per band. All users map into these 32 slots.
+
+**Impact**: Low — with representative-based storage, the bucket size is bounded by cluster count (~31 per bucket for 1K clusters), not user count. The 32-slot limit only matters if you have >32K distinct behavioural clusters.
+
+**Mitigation**: If cluster count is very high, increase `Rows` (e.g., R=10 gives 1024 slots) and compensate recall loss by increasing `Bands`.
+
+### 2. Representative coverage (triangle inequality)
+
+**Issue**: If user C is similar to user B (cos=0.8), and B was resolved to representative A (cos=0.85), but C has cos=0.65 with A (below threshold), then C won't find its cluster and becomes a spurious new representative.
+
+**Impact**: Medium — creates slightly more clusters than ideal. More common at threshold boundaries.
+
+**Mitigation**:
+- This naturally self-corrects: C becomes a representative, and future items similar to C will find it.
+- Use a lower `CosineThreshold`/`JaccardThreshold` to create looser clusters.
+- The two-stage filter (estimated + exact similarity) already uses a margin (`cosineMargin=0.1`, `jaccardMargin=0.1`) to avoid threshold edge effects on the estimated stage.
+
+### 3. Cluster drift over time
+
+**Issue**: The representative is the first item in a cluster. As more items join (resolved to the representative), the cluster's "true center" may drift, but the representative stays fixed.
+
+**Impact**: Low — the representative's threshold defines cluster boundaries. Items near the boundary may flip between clusters across different representative choices.
+
+**Mitigation**:
+- Accept that clusters are defined by the representative, not a centroid.
+- If precise centroids are needed, maintain them in a separate analytics pipeline.
+- Bucket TTL (14 days) naturally refreshes representatives.
+
+### 4. Representative TTL expiration
+
+**Issue**: Buckets have a TTL (14 days in Aerospike). When a bucket expires, its representative is lost. New items that would have matched must re-discover the cluster.
+
+**Impact**: Low — the representative's full record has a longer TTL (90 days). The L2 cache (`PutValue`) also survives bucket expiration. Only truly cold clusters (no queries in 14 days) need re-discovery.
+
+**Mitigation**:
+- L2 cache persists resolved mappings with record TTL (90 days).
+- Re-discovery is automatic: the first item in a cluster after expiration becomes the new representative.
+
+### 5. MinHash vs Hyperplane bucket distribution
+
+**Issue**: MinHash (dedup) produces full uint64 hash values per row, giving effectively unlimited bucket cardinality. Hyperplane (vector) produces binary 0/1 values, giving only 2^R buckets per band. The same storage interface serves both, but their scaling profiles differ.
+
+**Impact**: Low — representative-based storage handles both cases. Dedup buckets are naturally small; vector buckets are bounded by cluster count.
+
+**Mitigation**: No action needed. The representative model adapts to both distributions.
+
+### 6. Concurrent writes to the same bucket
+
+**Issue**: Two concurrent Upsert calls may both determine they're "novel" and both add themselves as representatives to the same buckets. This is safe (set semantics, idempotent), but may create two representatives for what could be one cluster.
+
+**Impact**: Low — group-level lock sharding (64 mutexes) reduces this. It can happen across different pods.
+
+**Mitigation**:
+- Same-group operations are serialized within a process via `groupLocks`.
+- Cross-pod: Aerospike MapPutOp is atomic. Both writes succeed, creating two representatives. Future items may match either one. This is acceptable for probabilistic clustering.
+
+## Development
+
+All shortcuts are in the Makefile:
+
+```sh
+make test                # Unit tests (no external deps)
+make test-integration    # Integration tests (requires Aerospike)
+make lint                # golangci-lint
+make coverage            # Unit coverage + threshold check (>=70%)
+make bench               # Run benchmarks (starts Aerospike automatically)
+make bench-baseline      # Rebuild tracked baseline
+make bench-compare       # Compare current vs baseline via benchstat
+make aerospike-start     # Start Aerospike via podman
+make aerospike-stop      # Stop Aerospike
+make ci                  # lint + coverage
+```
+
+## License
+
+See [LICENSE](LICENSE) for details.

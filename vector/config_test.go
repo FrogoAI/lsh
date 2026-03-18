@@ -3,7 +3,7 @@ package vector
 import (
 	"testing"
 
-	"github.com/FrogoAI/lsh"
+	"github.com/FrogoAI/lsh/v2"
 )
 
 func TestCalculateApproximateThreshold(t *testing.T) {

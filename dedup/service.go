@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/FrogoAI/lsh"
-	"github.com/FrogoAI/lsh/repositories"
+	"github.com/FrogoAI/lsh/v2"
+	"github.com/FrogoAI/lsh/v2/repositories"
 	"github.com/FrogoAI/multiproc/worker"
 	"github.com/FrogoAI/set"
 )
@@ -118,7 +118,7 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 
 	bucketKeys := lsh.PrefixKeys(prefix, keys)
 
-	allMembers, err := s.repo.BatchGetBucketMembers(bucketKeys)
+	allReps, err := s.repo.BatchGetRepresentatives(bucketKeys)
 	if err != nil {
 		return "", err
 	}
@@ -130,18 +130,12 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 			break
 		}
 
-		members := allMembers[bk]
-
-		if len(members) > s.config.MaxBucketSize {
-			continue
-		}
-
-		for _, m := range members {
-			if m.Metadata < int64(minLen) || m.Metadata > int64(maxLen) {
+		for _, rep := range allReps[bk] {
+			if rep.Metadata < int64(minLen) || rep.Metadata > int64(maxLen) {
 				continue
 			}
 
-			candidateSet.Add(m.ID)
+			candidateSet.Add(rep.ID)
 		}
 	}
 
@@ -206,7 +200,7 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 	})
 
 	pool.Execute(func(_ context.Context) error {
-		return s.repo.BatchAddBucketMember(bucketKeys, bid, int64(inputLen))
+		return s.repo.BatchSetRepresentative(bucketKeys, bid, int64(inputLen))
 	})
 
 	return bid, pool.Wait()

@@ -6,14 +6,14 @@ import (
 
 	"github.com/caarlos0/env/v10"
 
-	"github.com/FrogoAI/lsh"
+	"github.com/FrogoAI/lsh/v2"
 )
 
 const EnvPrefix = "VLSH"
 
 type Config struct {
 	lsh.Config
-	VectorDimensions int     `env:"_VECTOR_DIMENSIONS" envDefault:"18"`
+	VectorDimensions int     `env:"_VECTOR_DIMENSIONS" envDefault:"20"`
 	CosineThreshold  float64 `env:"_COS_THRESHOLD" envDefault:"0.7"`
 }
 

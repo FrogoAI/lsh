@@ -6,7 +6,7 @@ import (
 
 	"github.com/caarlos0/env/v10"
 
-	"github.com/FrogoAI/lsh"
+	"github.com/FrogoAI/lsh/v2"
 )
 
 const EnvPrefix = "LSH"

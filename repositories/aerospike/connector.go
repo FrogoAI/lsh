@@ -4,14 +4,12 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v8"
 	"github.com/aerospike/aerospike-client-go/v8/types"
 
-	"github.com/FrogoAI/lsh/repositories"
+	"github.com/FrogoAI/lsh/v2/repositories"
 )
 
 const (
 	binMembers = "m" // Map<MemberID, Metadata>
 	binKV      = "kv"
-
-	defaultHardLimit = 10000
 
 	bucketTTL = 14 * 24 * 3600 // 14 days
 	recordTTL = 90 * 24 * 3600 // 90 days
@@ -24,26 +22,19 @@ type Repository struct {
 
 	writePolicy *as.WritePolicy
 	readPolicy  *as.BasePolicy
-
-	hardLimit int
 }
 
-func NewRepository(client *as.Client, namespace, set string, hardLimit int) *Repository {
-	if hardLimit <= 0 {
-		hardLimit = defaultHardLimit
-	}
-
+func NewRepository(client *as.Client, namespace, set string) *Repository {
 	return &Repository{
 		client:      client,
 		namespace:   namespace,
 		set:         set,
 		writePolicy: as.NewWritePolicy(0, 0),
 		readPolicy:  as.NewPolicy(),
-		hardLimit:   hardLimit,
 	}
 }
 
-func (r *Repository) AddBucketMember(bucketKey, memberID string, metadata int64) error {
+func (r *Repository) SetRepresentative(bucketKey, memberID string, metadata int64) error {
 	key, err := as.NewKey(r.namespace, r.set, bucketKey)
 	if err != nil {
 		return err
@@ -60,7 +51,7 @@ func (r *Repository) AddBucketMember(bucketKey, memberID string, metadata int64)
 	return err
 }
 
-func (r *Repository) BatchAddBucketMember(bucketKeys []string, memberID string, metadata int64) error {
+func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string, metadata int64) error {
 	if len(bucketKeys) == 0 {
 		return nil
 	}
@@ -85,15 +76,13 @@ func (r *Repository) BatchAddBucketMember(bucketKeys []string, memberID string, 
 	return r.client.BatchOperate(nil, records)
 }
 
-func (r *Repository) GetBucketMembers(bucketKey string) ([]repositories.BucketMember, error) {
+func (r *Repository) GetRepresentatives(bucketKey string) ([]repositories.Representative, error) {
 	key, err := as.NewKey(r.namespace, r.set, bucketKey)
 	if err != nil {
 		return nil, err
 	}
 
-	opSize := as.MapSizeOp(binMembers)
-
-	record, err := r.client.Operate(r.writePolicy, key, opSize)
+	record, err := r.client.Get(r.readPolicy, key, binMembers)
 	if err != nil {
 		if err.Matches(types.KEY_NOT_FOUND_ERROR) {
 			return nil, nil
@@ -102,30 +91,50 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]repositories.BucketMe
 		return nil, err
 	}
 
-	sizeInt := 0
-	if res, ok := record.Bins[binMembers].(int); ok {
-		sizeInt = res
-	} else {
-		return nil, nil
-	}
-
-	if sizeInt > r.hardLimit {
-		stub := make([]repositories.BucketMember, sizeInt)
-
-		return stub, nil
-	}
-
-	fullRecord, err := r.client.Get(r.readPolicy, key, binMembers)
-	if err != nil {
-		return nil, err
-	}
-
-	rawMap, ok := fullRecord.Bins[binMembers].(map[interface{}]interface{})
+	rawMap, ok := record.Bins[binMembers].(map[interface{}]interface{})
 	if !ok {
 		return nil, nil
 	}
 
-	members := make([]repositories.BucketMember, 0, len(rawMap))
+	return parseRepresentatives(rawMap), nil
+}
+
+func (r *Repository) BatchGetRepresentatives(bucketKeys []string) (map[string][]repositories.Representative, error) {
+	keys := make([]*as.Key, len(bucketKeys))
+	for i, k := range bucketKeys {
+		key, err := as.NewKey(r.namespace, r.set, k)
+		if err != nil {
+			return nil, err
+		}
+
+		keys[i] = key
+	}
+
+	records, err := r.client.BatchGet(nil, keys, binMembers)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]repositories.Representative, len(bucketKeys))
+
+	for i, rec := range records {
+		if rec == nil {
+			continue
+		}
+
+		rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{})
+		if !ok {
+			continue
+		}
+
+		result[bucketKeys[i]] = parseRepresentatives(rawMap)
+	}
+
+	return result, nil
+}
+
+func parseRepresentatives(rawMap map[interface{}]interface{}) []repositories.Representative {
+	reps := make([]repositories.Representative, 0, len(rawMap))
 
 	for k, v := range rawMap {
 		idStr, ok := k.(string)
@@ -144,64 +153,10 @@ func (r *Repository) GetBucketMembers(bucketKey string) ([]repositories.BucketMe
 			meta = int64(n)
 		}
 
-		members = append(members, repositories.BucketMember{ID: idStr, Metadata: meta})
+		reps = append(reps, repositories.Representative{ID: idStr, Metadata: meta})
 	}
 
-	return members, nil
-}
-
-func (r *Repository) BatchGetBucketMembers(bucketKeys []string) (map[string][]repositories.BucketMember, error) {
-	keys := make([]*as.Key, len(bucketKeys))
-	for i, k := range bucketKeys {
-		key, err := as.NewKey(r.namespace, r.set, k)
-		if err != nil {
-			return nil, err
-		}
-
-		keys[i] = key
-	}
-
-	records, err := r.client.BatchGet(nil, keys, binMembers)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string][]repositories.BucketMember, len(bucketKeys))
-
-	for i, rec := range records {
-		if rec == nil {
-			continue
-		}
-
-		rawMap, ok := rec.Bins[binMembers].(map[interface{}]interface{})
-		if !ok {
-			continue
-		}
-
-		bKey := bucketKeys[i]
-
-		for id, v := range rawMap {
-			idStr, ok := id.(string)
-			if !ok {
-				continue
-			}
-
-			var meta int64
-
-			switch n := v.(type) {
-			case int:
-				meta = int64(n)
-			case int64:
-				meta = n
-			case float64:
-				meta = int64(n)
-			}
-
-			result[bKey] = append(result[bKey], repositories.BucketMember{ID: idStr, Metadata: meta})
-		}
-	}
-
-	return result, nil
+	return reps
 }
 
 func (r *Repository) SaveRecord(key string, bins map[string]any) error {

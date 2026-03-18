@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/FrogoAI/lsh"
-	"github.com/FrogoAI/lsh/repositories"
-	"github.com/FrogoAI/lsh/repositories/memory"
+	"github.com/FrogoAI/lsh/v2"
+	"github.com/FrogoAI/lsh/v2/repositories"
+	"github.com/FrogoAI/lsh/v2/repositories/memory"
 )
 
 func defaultConfig() *Config {
@@ -124,26 +124,27 @@ func TestUpsert_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestUpsert_MaxBucketSizeSkip(t *testing.T) {
+func TestUpsert_ManyUniqueInputs(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
 	cfg := &Config{
 		Config: lsh.Config{
 			Bands: 5, Rows: 2,
-			MaxBucketSize: 2, MaxTotalCandidates: 100, Seed: 42,
+			MaxBucketSize: 200, MaxTotalCandidates: 100, Seed: 42,
 		},
 		ShingleSize:      3,
 		JaccardThreshold: 0.6,
 	}
 	svc := NewService(repo, cfg)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 50; i++ {
 		_, err := svc.Upsert(ctx, "grp", "user"+strconv.Itoa(i)+"@example.com")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}
 
+	// Should not error with many representatives per bucket
 	id, err := svc.Upsert(ctx, "grp", "completely_different_string_xyz")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -431,7 +432,7 @@ func TestRecordFromBins_Branches(t *testing.T) {
 type spyRepository struct {
 	*memory.Repository
 	saveCalls     int64
-	batchAddCalls int64
+	batchSetCalls int64
 	batchGetCalls int64
 }
 
@@ -445,14 +446,14 @@ func (s *spyRepository) SaveRecord(key string, bins map[string]any) error {
 	return s.Repository.SaveRecord(key, bins)
 }
 
-func (s *spyRepository) BatchAddBucketMember(keys []string, memberID string, metadata int64) error {
-	atomic.AddInt64(&s.batchAddCalls, 1)
+func (s *spyRepository) BatchSetRepresentative(keys []string, memberID string, metadata int64) error {
+	atomic.AddInt64(&s.batchSetCalls, 1)
 
-	return s.Repository.BatchAddBucketMember(keys, memberID, metadata)
+	return s.Repository.BatchSetRepresentative(keys, memberID, metadata)
 }
 
-func (s *spyRepository) BatchGetBucketMembers(keys []string) (map[string][]repositories.BucketMember, error) {
+func (s *spyRepository) BatchGetRepresentatives(keys []string) (map[string][]repositories.Representative, error) {
 	atomic.AddInt64(&s.batchGetCalls, 1)
 
-	return s.Repository.BatchGetBucketMembers(keys)
+	return s.Repository.BatchGetRepresentatives(keys)
 }

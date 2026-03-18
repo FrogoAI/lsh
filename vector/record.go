@@ -1,6 +1,6 @@
 package vector
 
-import "github.com/FrogoAI/lsh/repositories"
+import "github.com/FrogoAI/lsh/v2/repositories"
 
 const (
 	binVector    = "v"
