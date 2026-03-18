@@ -4,6 +4,8 @@ package dedup
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"testing"
@@ -35,9 +37,15 @@ func aerospikeRepo(t *testing.T) *asrepo.Repository {
 
 	t.Cleanup(func() { client.Close() })
 
-	_ = client.Truncate(nil, testdata.Namespace, "dedup_int", nil)
+	return asrepo.NewRepository(client, testdata.Namespace, uniqueSet())
+}
 
-	return asrepo.NewRepository(client, testdata.Namespace, "dedup_int")
+func uniqueSet() string {
+	var b [4]byte
+
+	_, _ = rand.Read(b[:])
+
+	return "d_" + hex.EncodeToString(b[:])
 }
 
 func integrationConfig() *Config {

@@ -4,6 +4,8 @@ package vector
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"os"
@@ -36,9 +38,15 @@ func aerospikeRepo(t *testing.T) *asrepo.Repository {
 
 	t.Cleanup(func() { client.Close() })
 
-	_ = client.Truncate(nil, testdata.Namespace, "vector_int", nil)
+	return asrepo.NewRepository(client, testdata.Namespace, uniqueSet())
+}
 
-	return asrepo.NewRepository(client, testdata.Namespace, "vector_int")
+func uniqueSet() string {
+	var b [4]byte
+
+	_, _ = rand.Read(b[:])
+
+	return "v_" + hex.EncodeToString(b[:])
 }
 
 func integrationConfig(dims int) *Config {
