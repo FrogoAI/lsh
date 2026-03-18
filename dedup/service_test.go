@@ -251,7 +251,6 @@ func TestUpsert_DeterministicID(t *testing.T) {
 
 func BenchmarkUpsert(b *testing.B) {
 	ctx := context.Background()
-	repo := memory.NewRepository()
 	cfg := &Config{
 		Config: lsh.Config{
 			Bands: 20, Rows: 5,
@@ -261,25 +260,38 @@ func BenchmarkUpsert(b *testing.B) {
 		JaccardThreshold: 0.6,
 	}
 
-	svc, err := NewService(repo, cfg)
-	if err != nil {
-		b.Fatalf("NewService: %v", err)
-	}
-
-	for i := 0; i < 1000; i++ {
-		_, _ = svc.Upsert(ctx, "users", "seed"+strconv.Itoa(i)+"@gmail.com")
-	}
-
 	b.Run("NewRecord", func(b *testing.B) {
+		repo := memory.NewRepository()
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		// Seed some data so buckets aren't empty
+		for i := 0; i < 100; i++ {
+			_, _ = svc.Upsert(ctx, "users", "seed"+strconv.Itoa(i)+"@gmail.com")
+		}
+
+		// Use an offset so every iteration produces a truly novel input
+		offset := 100000
+
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			input := fmt.Sprintf("bench_new_%d@example.com", i)
+			input := fmt.Sprintf("bench_new_%d@example.com", offset+i)
 			_, _ = svc.Upsert(ctx, "users", input)
 		}
 	})
 
 	b.Run("DuplicateMatch", func(b *testing.B) {
+		repo := memory.NewRepository()
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
 		target := "duplicate@example.com"
 		_, _ = svc.Upsert(ctx, "users", target)
 
@@ -291,7 +303,15 @@ func BenchmarkUpsert(b *testing.B) {
 	})
 
 	b.Run("SimilarMatch", func(b *testing.B) {
+		repo := memory.NewRepository()
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
 		_, _ = svc.Upsert(ctx, "users", "similar_original@example.com")
+		// First call resolves and caches; subsequent calls hit L2
 		_, _ = svc.Upsert(ctx, "users", "similar_originak@example.com")
 
 		b.ResetTimer()

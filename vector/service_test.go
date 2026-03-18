@@ -379,25 +379,78 @@ func TestGetNewID(t *testing.T) {
 
 func BenchmarkUpsert(b *testing.B) {
 	ctx := context.Background()
-	repo := memory.NewRepository()
-	cfg := vectorConfig(18)
+	dims := 18
 
-	svc, err := NewService(repo, cfg)
-	if err != nil {
-		b.Fatalf("NewService: %v", err)
-	}
+	b.Run("NewRecord", func(b *testing.B) {
+		repo := memory.NewRepository()
+		cfg := vectorConfig(dims)
+		cfg.CosineThreshold = 0.99 // high threshold = most vectors are novel
 
-	vec := make([]float64, 18)
-	for i := range vec {
-		vec[i] = float64(i) * 0.1
-	}
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
 
-	b.ResetTimer()
+		b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		vec[0] = float64(i)
+		for i := 0; i < b.N; i++ {
+			vec := make([]float64, dims)
+			vec[0] = float64(i * 1000)
+			vec[1] = float64(i)
+			_, _ = svc.Upsert(ctx, "grp", vec)
+		}
+	})
+
+	b.Run("DuplicateMatch", func(b *testing.B) {
+		repo := memory.NewRepository()
+
+		svc, err := NewService(repo, vectorConfig(dims))
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		vec := make([]float64, dims)
+		for d := range vec {
+			vec[d] = float64(d) * 0.1
+		}
+
 		_, _ = svc.Upsert(ctx, "grp", vec)
-	}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, _ = svc.Upsert(ctx, "grp", vec)
+		}
+	})
+
+	b.Run("SimilarMatch", func(b *testing.B) {
+		repo := memory.NewRepository()
+		cfg := vectorConfig(dims)
+		cfg.CosineThreshold = 0.5
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		vec1 := make([]float64, dims)
+		vec2 := make([]float64, dims)
+
+		for d := range vec1 {
+			vec1[d] = float64(d) * 0.1
+			vec2[d] = float64(d)*0.1 + 0.01
+		}
+
+		_, _ = svc.Upsert(ctx, "grp", vec1)
+		// First call resolves and caches; subsequent calls hit L2
+		_, _ = svc.Upsert(ctx, "grp", vec2)
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, _ = svc.Upsert(ctx, "grp", vec2)
+		}
+	})
 }
 
 func TestUpsert_WithMetrics(t *testing.T) {

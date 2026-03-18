@@ -4,39 +4,51 @@ goos: linux
 goarch: amd64
 pkg: github.com/FrogoAI/lsh/v2/dedup
 cpu: Intel(R) Core(TM) Ultra 7 255H
-BenchmarkUpsert/NewRecord-16         	   66837	     20261 ns/op	    7414 B/op	     132 allocs/op
-BenchmarkUpsert/NewRecord-16         	 1000000	     16568 ns/op	    8665 B/op	     148 allocs/op
-BenchmarkUpsert/NewRecord-16         	 1880881	      9851 ns/op	    6382 B/op	      82 allocs/op
-BenchmarkUpsert/NewRecord-16         	 1531392	       733.1 ns/op	     207 B/op	       5 allocs/op
-BenchmarkUpsert/NewRecord-16         	 1636651	       692.6 ns/op	     207 B/op	       5 allocs/op
-BenchmarkUpsert/NewRecord-16         	 1784821	       650.5 ns/op	     207 B/op	       5 allocs/op
-BenchmarkUpsert/DuplicateMatch-16    	 6942067	       176.3 ns/op	      64 B/op	       3 allocs/op
-BenchmarkUpsert/DuplicateMatch-16    	 6427264	       187.2 ns/op	      64 B/op	       3 allocs/op
-BenchmarkUpsert/DuplicateMatch-16    	 6591598	       172.3 ns/op	      64 B/op	       3 allocs/op
-BenchmarkUpsert/DuplicateMatch-16    	 6696342	       172.9 ns/op	      64 B/op	       3 allocs/op
-BenchmarkUpsert/DuplicateMatch-16    	 6625664	       171.3 ns/op	      64 B/op	       3 allocs/op
-BenchmarkUpsert/DuplicateMatch-16    	 6522865	       178.6 ns/op	      64 B/op	       3 allocs/op
-BenchmarkUpsert/SimilarMatch-16      	 5543952	       182.4 ns/op	      40 B/op	       2 allocs/op
-BenchmarkUpsert/SimilarMatch-16      	 6746923	       174.0 ns/op	      40 B/op	       2 allocs/op
-BenchmarkUpsert/SimilarMatch-16      	 6163500	       189.6 ns/op	      40 B/op	       2 allocs/op
-BenchmarkUpsert/SimilarMatch-16      	 6807003	       166.8 ns/op	      40 B/op	       2 allocs/op
-BenchmarkUpsert/SimilarMatch-16      	 6720091	       178.9 ns/op	      40 B/op	       2 allocs/op
-BenchmarkUpsert/SimilarMatch-16      	 6386665	       178.2 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/NewRecord-16         	   52898	     24395 ns/op	    8672 B/op	     159 allocs/op
+BenchmarkUpsert/NewRecord-16         	   45532	     27009 ns/op	    8681 B/op	     159 allocs/op
+BenchmarkUpsert/NewRecord-16         	   52371	     26975 ns/op	    8673 B/op	     159 allocs/op
+BenchmarkUpsert/NewRecord-16         	   55412	     24452 ns/op	    8685 B/op	     159 allocs/op
+BenchmarkUpsert/NewRecord-16         	   53294	     25159 ns/op	    8673 B/op	     159 allocs/op
+BenchmarkUpsert/NewRecord-16         	   52400	     22049 ns/op	    8673 B/op	     159 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 5831793	       223.0 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 5832256	       223.9 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 5033934	       238.2 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 4735939	       250.9 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 5313538	       226.9 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 5309319	       233.7 ns/op	      64 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 5667909	       210.8 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 5876434	       198.7 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 5824150	       200.2 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 5714707	       197.6 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 5410465	       208.0 ns/op	      40 B/op	       2 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 4765818	       223.1 ns/op	      40 B/op	       2 allocs/op
 PASS
-ok  	github.com/FrogoAI/lsh/v2/dedup	62.921s
+ok  	github.com/FrogoAI/lsh/v2/dedup	28.425s
 ?   	github.com/FrogoAI/lsh/v2/repositories	[no test files]
 ?   	github.com/FrogoAI/lsh/v2/repositories/aerospike	[no test files]
 PASS
-ok  	github.com/FrogoAI/lsh/v2/repositories/memory	0.004s
+ok  	github.com/FrogoAI/lsh/v2/repositories/memory	0.003s
 goos: linux
 goarch: amd64
 pkg: github.com/FrogoAI/lsh/v2/vector
 cpu: Intel(R) Core(TM) Ultra 7 255H
-BenchmarkUpsert-16    	  163213	      7874 ns/op	    4626 B/op	      82 allocs/op
-BenchmarkUpsert-16    	  115628	      8896 ns/op	    4646 B/op	      82 allocs/op
-BenchmarkUpsert-16    	  118194	      9141 ns/op	    4662 B/op	      82 allocs/op
-BenchmarkUpsert-16    	  124546	      8733 ns/op	    4666 B/op	      82 allocs/op
-BenchmarkUpsert-16    	  150988	      8800 ns/op	    4637 B/op	      82 allocs/op
-BenchmarkUpsert-16    	  124509	      8279 ns/op	    4667 B/op	      82 allocs/op
+BenchmarkUpsert/NewRecord-16         	  111332	     11567 ns/op	    5275 B/op	     100 allocs/op
+BenchmarkUpsert/NewRecord-16         	   89718	     12114 ns/op	    5280 B/op	     100 allocs/op
+BenchmarkUpsert/NewRecord-16         	  114585	      9876 ns/op	    5296 B/op	     100 allocs/op
+BenchmarkUpsert/NewRecord-16         	   98007	     10936 ns/op	    5270 B/op	     100 allocs/op
+BenchmarkUpsert/NewRecord-16         	  123826	     11405 ns/op	    5330 B/op	     100 allocs/op
+BenchmarkUpsert/NewRecord-16         	  100996	     10524 ns/op	    5266 B/op	     100 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 4052576	       398.7 ns/op	     208 B/op	       4 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 2842658	       387.8 ns/op	     208 B/op	       4 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 2895146	       405.5 ns/op	     208 B/op	       4 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 3224116	       395.6 ns/op	     208 B/op	       4 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 2690910	       402.4 ns/op	     208 B/op	       4 allocs/op
+BenchmarkUpsert/DuplicateMatch-16    	 2710927	       374.3 ns/op	     208 B/op	       4 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 2792096	       386.4 ns/op	     184 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 3196822	       400.4 ns/op	     184 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 2832552	       409.1 ns/op	     184 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 3371978	       401.1 ns/op	     184 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 3122734	       383.0 ns/op	     184 B/op	       3 allocs/op
+BenchmarkUpsert/SimilarMatch-16      	 3136280	       362.9 ns/op	     184 B/op	       3 allocs/op
 PASS
-ok  	github.com/FrogoAI/lsh/v2/vector	7.489s
+ok  	github.com/FrogoAI/lsh/v2/vector	28.134s
