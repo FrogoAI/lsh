@@ -2,15 +2,15 @@ package lsh
 
 import "go.opentelemetry.io/otel/attribute"
 
-// Metric names for OpenTelemetry instrumentation.
+// Metric name suffixes for OpenTelemetry instrumentation.
+// Each use case prepends its own prefix: "lsh.vector." or "lsh.dedup.".
 const (
-	MetricUpsertDuration     = "lsh.upsert.duration"      // Histogram: seconds per Upsert call
-	MetricUpsertTotal        = "lsh.upsert.total"         // Counter: total Upsert calls by result
-	MetricNewIDTotal         = "lsh.new_id.total"         // Counter: new behavioural IDs created
-	MetricCandidateCount     = "lsh.candidates.count"     // Histogram: candidates evaluated per Upsert
-	MetricExactCompareCount  = "lsh.exact_compare.count"  // Histogram: exact similarity checks per Upsert
-	MetricResolvedCacheSize  = "lsh.resolved_cache.size"  // Gauge: current L2 cache entries
-	MetricBucketRepsReturned = "lsh.bucket_reps.returned" // Histogram: total reps returned per query
+	MetricUpsertDuration     = "upsert.duration"      // Histogram: seconds per Upsert call
+	MetricUpsertTotal        = "upsert.total"         // Counter: total Upsert calls by result
+	MetricNewIDTotal         = "new_id.total"         // Counter: new IDs created
+	MetricCandidateCount     = "candidates.count"     // Histogram: candidates evaluated per Upsert
+	MetricExactCompareCount  = "exact_compare.count"  // Histogram: exact similarity checks per Upsert
+	MetricBucketRepsReturned = "bucket_reps.returned" // Histogram: total reps returned per query
 )
 
 // Attribute keys for metric labels.
