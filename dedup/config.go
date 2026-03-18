@@ -1,6 +1,7 @@
 package dedup
 
 import (
+	"fmt"
 	"math"
 	"strings"
 
@@ -38,6 +39,21 @@ func (c *Config) CalculateApproximateThreshold() float64 {
 	}
 
 	return math.Pow(1.0/float64(c.Bands), 1.0/float64(c.Rows))
+}
+
+// Validate checks that the LSH approximate threshold is strictly below JaccardThreshold.
+// If violated, recall at the application threshold drops below 50%.
+func (c *Config) Validate() error {
+	approx := c.CalculateApproximateThreshold()
+
+	if approx >= c.JaccardThreshold {
+		return fmt.Errorf(
+			"%w: LSH approximate threshold (%.3f) must be below JaccardThreshold (%.3f), increase Bands or decrease Rows",
+			lsh.ErrInvalidConfig, approx, c.JaccardThreshold,
+		)
+	}
+
+	return nil
 }
 
 // HashVersion computes a deterministic prefix from group + all config fields.

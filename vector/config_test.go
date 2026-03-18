@@ -117,3 +117,41 @@ func TestHashVersion_Deterministic(t *testing.T) {
 		t.Error("different config produced same hash")
 	}
 }
+
+func TestValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		bands   int
+		rows    int
+		thresh  float64
+		wantErr bool
+	}{
+		{name: "B40_R5_cos0.7 (default)", bands: 40, rows: 5, thresh: 0.7, wantErr: false},
+		{name: "B40_R5_cos0.5", bands: 40, rows: 5, thresh: 0.5, wantErr: false},
+		{name: "B20_R5_cos0.7", bands: 20, rows: 5, thresh: 0.7, wantErr: false},
+		{name: "B5_R5_cos0.1 (approx=0.494 > 0.1)", bands: 5, rows: 5, thresh: 0.1, wantErr: true},
+		{name: "B1_R20_cos0.3 (tight bands)", bands: 1, rows: 20, thresh: 0.3, wantErr: true},
+		{name: "B2_R15_cos0.5 (too few bands)", bands: 2, rows: 15, thresh: 0.5, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{
+				Config:           lsh.Config{Bands: tc.bands, Rows: tc.rows},
+				CosineThreshold:  tc.thresh,
+				VectorDimensions: 20,
+			}
+
+			err := cfg.Validate()
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expected error, got nil (approx=%.3f, thresh=%.3f)",
+					cfg.CalculateApproximateThreshold(), tc.thresh)
+			}
+
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}

@@ -70,3 +70,41 @@ func TestHashVersion_Deterministic(t *testing.T) {
 		t.Error("different config produced same hash")
 	}
 }
+
+func TestValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		bands   int
+		rows    int
+		thresh  float64
+		wantErr bool
+	}{
+		{name: "B40_R5_jac0.6 (default)", bands: 40, rows: 5, thresh: 0.6, wantErr: false},
+		{name: "B40_R5_jac0.8", bands: 40, rows: 5, thresh: 0.8, wantErr: false},
+		{name: "B20_R5_jac0.6", bands: 20, rows: 5, thresh: 0.6, wantErr: false},
+		{name: "B40_R8_jac0.6 (approx=0.644 > 0.6)", bands: 40, rows: 8, thresh: 0.6, wantErr: true},
+		{name: "B40_R8_jac0.7 (approx=0.644 < 0.7)", bands: 40, rows: 8, thresh: 0.7, wantErr: false},
+		{name: "B10_R10_jac0.5 (approx=0.794 > 0.5)", bands: 10, rows: 10, thresh: 0.5, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{
+				Config:           lsh.Config{Bands: tc.bands, Rows: tc.rows},
+				JaccardThreshold: tc.thresh,
+				ShingleSize:      3,
+			}
+
+			err := cfg.Validate()
+
+			if tc.wantErr && err == nil {
+				t.Errorf("expected error, got nil (approx=%.3f, thresh=%.3f)",
+					cfg.CalculateApproximateThreshold(), tc.thresh)
+			}
+
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}

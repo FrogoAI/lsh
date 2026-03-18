@@ -1,6 +1,7 @@
 package vector
 
 import (
+	"fmt"
 	"math"
 	"strings"
 
@@ -59,6 +60,22 @@ func (c *Config) CalculateApproximateThreshold() float64 {
 	}
 
 	return (lo + hi) * half
+}
+
+// Validate checks that the LSH approximate threshold is strictly below CosineThreshold.
+// If violated, recall at the application threshold drops below 50% — the system misses
+// more matches than it finds. This catches dangerous B/R configurations early.
+func (c *Config) Validate() error {
+	approx := c.CalculateApproximateThreshold()
+
+	if approx >= c.CosineThreshold {
+		return fmt.Errorf(
+			"%w: LSH approximate threshold (%.3f) must be below CosineThreshold (%.3f), increase Bands or decrease Rows",
+			lsh.ErrInvalidConfig, approx, c.CosineThreshold,
+		)
+	}
+
+	return nil
 }
 
 // HashVersion computes a deterministic prefix from group + all config fields.
