@@ -29,28 +29,19 @@ type Service struct {
 	groupLocks    [lsh.GroupLockShards]sync.Mutex
 	prefixCache   sync.Map
 	resolvedCache *lru.Cache[string, string]
-
-	mu      sync.RWMutex
-	meter   metric.Meter
-	metrics *instruments
+	metrics       *lsh.Instruments
 }
 
-type instruments struct {
-	upsertDuration     metric.Float64Histogram
-	upsertTotal        metric.Int64Counter
-	newIDTotal         metric.Int64Counter
-	candidateCount     metric.Int64Histogram
-	exactCompareCount  metric.Int64Histogram
-	bucketRepsReturned metric.Int64Histogram
-}
-
-func NewService(repo repositories.Storage, config *Config) *Service {
+func NewService(repo repositories.Storage, config *Config) (*Service, error) {
 	cacheSize := config.ResolvedCacheSize
 	if cacheSize <= 0 {
 		cacheSize = 1 //nolint:mnd
 	}
 
-	cache, _ := lru.New[string, string](cacheSize)
+	cache, err := lru.New[string, string](cacheSize)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Service{
 		hasher:        NewHasher(config.Bands, config.Rows, config.VectorDimensions, config.Seed),
@@ -58,82 +49,14 @@ func NewService(repo repositories.Storage, config *Config) *Service {
 		config:        config,
 		signaturePool: lsh.NewSignaturePool(config.SignatureSize()),
 		resolvedCache: cache,
-	}
+	}, nil
 }
 
-// WithMeter sets the OpenTelemetry meter for this service.
+// WithMetrics sets pre-built OpenTelemetry instruments for this service.
+// Create via lsh.NewInstruments(meter, "lsh.vector.").
 // If not called, metrics are silently skipped.
-func (s *Service) WithMeter(m metric.Meter) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.meter = m
-	s.metrics = nil // reset, will be re-initialized on next Upsert
-}
-
-const metricPrefix = "lsh.vector."
-
-func (s *Service) getMetrics() *instruments {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.metrics != nil {
-		return s.metrics
-	}
-
-	if s.meter == nil {
-		return nil
-	}
-
-	inst, err := newInstruments(s.meter)
-	if err != nil {
-		slog.Warn("failed to create LSH vector metrics", slog.Any("error", err))
-
-		return nil
-	}
-
-	s.metrics = inst
-
-	return inst
-}
-
-func newInstruments(m metric.Meter) (*instruments, error) {
-	var (
-		inst instruments
-		err  error
-	)
-
-	inst.upsertDuration, err = m.Float64Histogram(metricPrefix+lsh.MetricUpsertDuration, metric.WithUnit("s"))
-	if err != nil {
-		return nil, err
-	}
-
-	inst.upsertTotal, err = m.Int64Counter(metricPrefix + lsh.MetricUpsertTotal)
-	if err != nil {
-		return nil, err
-	}
-
-	inst.newIDTotal, err = m.Int64Counter(metricPrefix + lsh.MetricNewIDTotal)
-	if err != nil {
-		return nil, err
-	}
-
-	inst.candidateCount, err = m.Int64Histogram(metricPrefix + lsh.MetricCandidateCount)
-	if err != nil {
-		return nil, err
-	}
-
-	inst.exactCompareCount, err = m.Int64Histogram(metricPrefix + lsh.MetricExactCompareCount)
-	if err != nil {
-		return nil, err
-	}
-
-	inst.bucketRepsReturned, err = m.Int64Histogram(metricPrefix + lsh.MetricBucketRepsReturned)
-	if err != nil {
-		return nil, err
-	}
-
-	return &inst, nil
+func (s *Service) WithMetrics(m *lsh.Instruments) {
+	s.metrics = m
 }
 
 // GetNewID returns a deterministic ID derived from the vector content.
@@ -169,7 +92,6 @@ func (s *Service) getPrefix(group string) (string, error) {
 // Otherwise stores the vector and returns a new ID.
 func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (string, error) {
 	start := time.Now()
-	met := s.getMetrics()
 
 	if len(vector) == 0 {
 		return "", ErrEmptyVector
@@ -188,14 +110,14 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 
 	for _, rec := range existing {
 		if rec.Key == bid {
-			s.recordUpsert(ctx, met, start, lsh.ResultL1Hit, group)
+			s.recordUpsert(ctx, start, lsh.ResultL1Hit, group)
 
 			return bid, nil
 		}
 	}
 
 	if resolved, ok := s.resolvedCache.Get(bid); ok {
-		s.recordUpsert(ctx, met, start, lsh.ResultL2Hit, group)
+		s.recordUpsert(ctx, start, lsh.ResultL2Hit, group)
 
 		return resolved, nil
 	}
@@ -204,7 +126,7 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 		return "", err
 	} else if resolved != "" {
 		s.resolvedCache.Add(bid, resolved)
-		s.recordUpsert(ctx, met, start, lsh.ResultL3Hit, group)
+		s.recordUpsert(ctx, start, lsh.ResultL3Hit, group)
 
 		return resolved, nil
 	}
@@ -239,7 +161,7 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 
 	ids := s.collectCandidates(bucketKeys, allReps)
 
-	s.recordCandidateStats(ctx, met, bucketKeys, allReps, ids)
+	s.recordCandidateStats(ctx, bucketKeys, allReps, ids)
 
 	if len(ids) > 0 {
 		rawRecords, err := s.repo.GetRecords(ids)
@@ -282,14 +204,14 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 					)
 				}
 
-				s.recordExactChecks(ctx, met, exactChecks)
-				s.recordUpsert(ctx, met, start, lsh.ResultMatch, group)
+				s.recordExactChecks(ctx, exactChecks)
+				s.recordUpsert(ctx, start, lsh.ResultMatch, group)
 
 				return p.ID, nil
 			}
 		}
 
-		s.recordExactChecks(ctx, met, exactChecks)
+		s.recordExactChecks(ctx, exactChecks)
 	}
 
 	pool := worker.NewPool(ctx)
@@ -314,10 +236,10 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 
 	err = pool.Wait()
 
-	s.recordUpsert(ctx, met, start, lsh.ResultNew, group)
+	s.recordUpsert(ctx, start, lsh.ResultNew, group)
 
-	if met != nil {
-		met.newIDTotal.Add(ctx, 1, metric.WithAttributes(lsh.AttrGroup.String(group)))
+	if s.metrics != nil {
+		s.metrics.NewIDTotal.Add(ctx, 1, metric.WithAttributes(lsh.AttrGroup.String(group)))
 	}
 
 	return bid, err
@@ -368,25 +290,24 @@ func (s *Service) collectCandidates(
 	return ids
 }
 
-func (s *Service) recordUpsert(ctx context.Context, met *instruments, start time.Time, result, group string) {
-	if met == nil {
+func (s *Service) recordUpsert(ctx context.Context, start time.Time, result, group string) {
+	if s.metrics == nil {
 		return
 	}
 
 	attrs := metric.WithAttributes(lsh.AttrResult.String(result), lsh.AttrGroup.String(group))
 
-	met.upsertDuration.Record(ctx, time.Since(start).Seconds(), attrs)
-	met.upsertTotal.Add(ctx, 1, attrs)
+	s.metrics.UpsertDuration.Record(ctx, time.Since(start).Seconds(), attrs)
+	s.metrics.UpsertTotal.Add(ctx, 1, attrs)
 }
 
 func (s *Service) recordCandidateStats(
 	ctx context.Context,
-	met *instruments,
 	bucketKeys []string,
 	allReps map[string][]repositories.Representative,
 	ids []string,
 ) {
-	if met == nil {
+	if s.metrics == nil {
 		return
 	}
 
@@ -395,14 +316,14 @@ func (s *Service) recordCandidateStats(
 		totalReps += len(allReps[bk])
 	}
 
-	met.bucketRepsReturned.Record(ctx, int64(totalReps))
-	met.candidateCount.Record(ctx, int64(len(ids)))
+	s.metrics.BucketRepsReturned.Record(ctx, int64(totalReps))
+	s.metrics.CandidateCount.Record(ctx, int64(len(ids)))
 }
 
-func (s *Service) recordExactChecks(ctx context.Context, met *instruments, count int) {
-	if met == nil {
+func (s *Service) recordExactChecks(ctx context.Context, count int) {
+	if s.metrics == nil {
 		return
 	}
 
-	met.exactCompareCount.Record(ctx, int64(count))
+	s.metrics.ExactCompareCount.Record(ctx, int64(count))
 }

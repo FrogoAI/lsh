@@ -26,7 +26,11 @@ func defaultConfig() *Config {
 func TestUpsertEmail(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
-	svc := NewService(repo, defaultConfig())
+
+	svc, err := NewService(repo, defaultConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id, err := svc.Upsert(ctx, "email", "maxim@weavers.team")
 	if err != nil {
@@ -55,7 +59,11 @@ func TestUpsertEmail(t *testing.T) {
 func TestUpsert(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
-	svc := NewService(repo, defaultConfig())
+
+	svc, err := NewService(repo, defaultConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1, err := svc.Upsert(ctx, "users", "John Doe")
 	if err != nil {
@@ -114,9 +122,13 @@ func TestUpsert_EdgeCases(t *testing.T) {
 				ShingleSize:      5,
 				JaccardThreshold: 0.6,
 			}
-			svc := NewService(repo, cfg)
 
-			_, err := svc.Upsert(ctx, "g", tc.input)
+			svc, err := NewService(repo, cfg)
+			if err != nil {
+				t.Fatalf("NewService: %v", err)
+			}
+
+			_, err = svc.Upsert(ctx, "g", tc.input)
 			if err != tc.wantErr {
 				t.Errorf("got err %v, want %v", err, tc.wantErr)
 			}
@@ -135,7 +147,11 @@ func TestUpsert_ManyUniqueInputs(t *testing.T) {
 		ShingleSize:      3,
 		JaccardThreshold: 0.6,
 	}
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	for i := 0; i < 50; i++ {
 		_, err := svc.Upsert(ctx, "grp", "user"+strconv.Itoa(i)+"@example.com")
@@ -158,7 +174,11 @@ func TestUpsert_ManyUniqueInputs(t *testing.T) {
 func TestUpsert_ResolvedCache(t *testing.T) {
 	ctx := context.Background()
 	repo := newSpyRepository()
-	svc := NewService(repo, defaultConfig())
+
+	svc, err := NewService(repo, defaultConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	originalID, err := svc.Upsert(ctx, "email", "maxim@weavers.team")
 	if err != nil {
@@ -198,7 +218,11 @@ func TestUpsert_ResolvedCache(t *testing.T) {
 func TestUpsert_DeterministicID(t *testing.T) {
 	ctx := context.Background()
 	repo := newSpyRepository()
-	svc := NewService(repo, defaultConfig())
+
+	svc, err := NewService(repo, defaultConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1, err := svc.Upsert(ctx, "grp", "optimization_test_input")
 	if err != nil {
@@ -234,7 +258,11 @@ func BenchmarkUpsert(b *testing.B) {
 		ShingleSize:      3,
 		JaccardThreshold: 0.6,
 	}
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		b.Fatalf("NewService: %v", err)
+	}
 
 	for i := 0; i < 1000; i++ {
 		_, _ = svc.Upsert(ctx, "users", "seed"+strconv.Itoa(i)+"@gmail.com")
@@ -277,7 +305,10 @@ func TestUpsert_L2CacheSurvivesPodRestart(t *testing.T) {
 	repo := memory.NewRepository()
 	cfg := defaultConfig()
 
-	svc1 := NewService(repo, cfg)
+	svc1, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	originalID, err := svc1.Upsert(ctx, "email", "maxim@weavers.team")
 	if err != nil {
@@ -290,7 +321,10 @@ func TestUpsert_L2CacheSurvivesPodRestart(t *testing.T) {
 	}
 
 	// Simulate pod restart: new service instance, same repo
-	svc2 := NewService(repo, cfg)
+	svc2, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id, err := svc2.Upsert(ctx, "email", "maxim@weavets.team")
 	if err != nil {
@@ -313,7 +347,11 @@ func TestUpsert_MaxTotalCandidatesCap(t *testing.T) {
 		ShingleSize:      3,
 		JaccardThreshold: 0.6,
 	}
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	for i := 0; i < 20; i++ {
 		_, err := svc.Upsert(ctx, "grp", "candidate"+strconv.Itoa(i)+"@test.com")
@@ -323,14 +361,17 @@ func TestUpsert_MaxTotalCandidatesCap(t *testing.T) {
 	}
 
 	// Should not panic or error with many candidates
-	_, err := svc.Upsert(ctx, "grp", "candidate99@test.com")
+	_, err = svc.Upsert(ctx, "grp", "candidate99@test.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestGetNewID(t *testing.T) {
-	svc := NewService(memory.NewRepository(), defaultConfig())
+	svc, err := NewService(memory.NewRepository(), defaultConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1 := svc.GetNewID("hello")
 	id2 := svc.GetNewID("hello")

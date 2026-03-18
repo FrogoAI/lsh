@@ -68,7 +68,12 @@ func TestScale_RecordSize(t *testing.T) {
 
 	// Verify actual bin sizes
 	vec := makeVector(dims, 0, 0)
-	svc := NewService(memory.NewRepository(), scaleConfig(dims))
+
+	svc, err := NewService(memory.NewRepository(), scaleConfig(dims))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
 	bins := Record{
 		ID:        svc.GetNewID(vec),
 		Vector:    vec,
@@ -105,7 +110,11 @@ func TestScale_BucketGrowthWithClusters(t *testing.T) {
 			repo := memory.NewRepository()
 			cfg := scaleConfig(dims)
 			cfg.CosineThreshold = 0.8
-			svc := NewService(repo, cfg)
+
+			svc, err := NewService(repo, cfg)
+			if err != nil {
+				t.Fatalf("NewService: %v", err)
+			}
 
 			for c := 0; c < tc.clusters; c++ {
 				for u := 0; u < tc.usersPerClus; u++ {
@@ -169,7 +178,11 @@ func TestScale_RecallWithManyClusters(t *testing.T) {
 	cfg := scaleConfig(dims)
 	cfg.CosineThreshold = 0.7
 	cfg.MaxTotalCandidates = 50
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	clusterIDs := make([]string, clusterCount)
 	clusterVecs := make([][]float64, clusterCount)
@@ -248,7 +261,11 @@ func TestScale_RecallDegradationWithMaxTotalCandidates(t *testing.T) {
 			cfg := scaleConfig(dims)
 			cfg.CosineThreshold = 0.8
 			cfg.MaxTotalCandidates = tc.maxCand
-			svc := NewService(repo, cfg)
+
+			svc, err := NewService(repo, cfg)
+			if err != nil {
+				t.Fatalf("NewService: %v", err)
+			}
 
 			clusterIDs := make([]string, tc.clusters)
 			clusterVecs := make([][]float64, tc.clusters)
@@ -310,7 +327,11 @@ func TestScale_PrecisionGuarantee(t *testing.T) {
 	repo := memory.NewRepository()
 	cfg := scaleConfig(dims)
 	cfg.CosineThreshold = 0.7
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Seed representatives
 	for c := 0; c < clusters; c++ {
@@ -385,7 +406,11 @@ func TestScale_NoFalsePositivesBelowThreshold(t *testing.T) {
 	repo := memory.NewRepository()
 	cfg := scaleConfig(dims)
 	cfg.CosineThreshold = 0.9
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Create orthogonal unit vectors (one-hot in each dimension)
 	ids := make([]string, dims)
@@ -418,7 +443,11 @@ func TestScale_IdempotentRepresentatives(t *testing.T) {
 	dims := 5
 	repo := memory.NewRepository()
 	cfg := scaleConfig(dims)
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	vec := []float64{1.0, 2.0, 3.0, 4.0, 5.0}
 
@@ -467,7 +496,11 @@ func TestScale_ManyUsersPerCluster(t *testing.T) {
 	repo := memory.NewRepository()
 	cfg := scaleConfig(dims)
 	cfg.CosineThreshold = 0.5
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	clusterIDs := make([]string, clusters)
 
@@ -519,7 +552,11 @@ func TestScale_BandOverlapRanking(t *testing.T) {
 	// Verify that the collectCandidates method correctly ranks by band overlap
 	dims := 5
 	cfg := scaleConfig(dims)
-	svc := NewService(memory.NewRepository(), cfg)
+
+	svc, err := NewService(memory.NewRepository(), cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Simulate: candidate A appears in 10 bands, B in 2 bands, C in 1 band
 	bucketKeys := []string{"b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9"}
@@ -562,7 +599,11 @@ func TestScale_MaxTotalCandidatesTruncation(t *testing.T) {
 	dims := 5
 	cfg := scaleConfig(dims)
 	cfg.MaxTotalCandidates = 3
-	svc := NewService(memory.NewRepository(), cfg)
+
+	svc, err := NewService(memory.NewRepository(), cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	bucketKeys := []string{"b0", "b1"}
 	allReps := map[string][]repositories.Representative{

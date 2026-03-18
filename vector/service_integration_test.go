@@ -43,7 +43,11 @@ func TestVectorUpsert_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
 	cfg := integrationConfig(5)
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	vec := []float64{1.0, 2.0, 3.0, 4.0, 5.0}
 
@@ -72,7 +76,11 @@ func TestVectorUpsert_SimilarVectors_Aerospike(t *testing.T) {
 	ctx := context.Background()
 	cfg := integrationConfig(5)
 	cfg.CosineThreshold = 0.5
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	v1 := []float64{1.0, 2.0, 3.0, 4.0, 5.0}
 	v2 := []float64{1.1, 2.1, 3.1, 4.1, 5.1}
@@ -100,7 +108,11 @@ func TestVectorUpsert_DifferentVectors_Aerospike(t *testing.T) {
 	ctx := context.Background()
 	cfg := integrationConfig(5)
 	cfg.CosineThreshold = 0.9
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	v1 := []float64{1.0, 0.0, 0.0, 0.0, 0.0}
 	v2 := []float64{0.0, 0.0, 0.0, 0.0, 1.0}
@@ -121,7 +133,11 @@ func TestVectorUpsert_BehavioralScenarios_Aerospike(t *testing.T) {
 	ctx := context.Background()
 	cfg := integrationConfig(5)
 	cfg.CosineThreshold = 0.9
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Two bonus hunters
 	hunter1 := []float64{2.0, 1.0, 0.95, 1.1, 1.0}
@@ -155,7 +171,10 @@ func TestVectorUpsert_L2CachePersistence_Aerospike(t *testing.T) {
 	cfg := integrationConfig(4)
 	cfg.CosineThreshold = 0.5
 
-	svc1 := NewService(repo, cfg)
+	svc1, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	v1 := []float64{1.0, 2.0, 3.0, 4.0}
 	v2 := []float64{1.1, 2.1, 3.1, 4.1}
@@ -164,7 +183,10 @@ func TestVectorUpsert_L2CachePersistence_Aerospike(t *testing.T) {
 	_, _ = svc1.Upsert(ctx, "grp", v2)
 
 	// Simulate pod restart
-	svc2 := NewService(repo, cfg)
+	svc2, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id, err := svc2.Upsert(ctx, "grp", v2)
 	if err != nil {
@@ -181,7 +203,11 @@ func TestVectorUpsert_PrecisionGuarantee_Aerospike(t *testing.T) {
 	ctx := context.Background()
 	cfg := integrationConfig(10)
 	cfg.CosineThreshold = 0.7
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Seed clusters
 	clusters := 20
@@ -237,7 +263,11 @@ func TestVectorUpsert_Scale_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
 	cfg := integrationConfig(10)
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	for i := 0; i < 200; i++ {
 		vec := make([]float64, 10)
@@ -258,7 +288,11 @@ func TestVectorUpsert_1000Vectors_GroupValidation_Aerospike(t *testing.T) {
 	dims := 10
 	cfg := integrationConfig(dims)
 	cfg.CosineThreshold = 0.8
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Define 5 behavioral clusters with clear angular separation.
 	// Cosine similarity ignores magnitude, so clusters must differ in DIRECTION.

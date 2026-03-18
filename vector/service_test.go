@@ -24,7 +24,11 @@ func vectorConfig(dims int) *Config {
 func TestUpsert_Basic(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
-	svc := NewService(repo, vectorConfig(3))
+
+	svc, err := NewService(repo, vectorConfig(3))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id, err := svc.Upsert(ctx, "grp", []float64{1.0, 2.0, 3.0})
 	if err != nil {
@@ -48,7 +52,11 @@ func TestUpsert_Basic(t *testing.T) {
 func TestUpsert_Validation(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
-	svc := NewService(repo, vectorConfig(3))
+
+	svc, err := NewService(repo, vectorConfig(3))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	cases := []struct {
 		name    string
@@ -84,7 +92,11 @@ func TestUpsert_BehavioralScenarios(t *testing.T) {
 		repo := memory.NewRepository()
 		cfg := vectorConfig(5)
 		cfg.CosineThreshold = 0.9
-		svc := NewService(repo, cfg)
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			t.Fatalf("NewService: %v", err)
+		}
 
 		// Two bonus hunters: low deposits, single withdrawal, high ratio
 		hunter1 := []float64{2.0, 1.0, 0.95, 1.1, 1.0} // deposit_count, withdrawal_count, wd_ratio, bet_ratio, promo
@@ -109,7 +121,11 @@ func TestUpsert_BehavioralScenarios(t *testing.T) {
 		repo := memory.NewRepository()
 		cfg := vectorConfig(5)
 		cfg.CosineThreshold = 0.9
-		svc := NewService(repo, cfg)
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			t.Fatalf("NewService: %v", err)
+		}
 
 		// Normal user: many deposits, moderate activity
 		normal := []float64{20.0, 5.0, 0.3, 8.0, 0.0}
@@ -137,7 +153,11 @@ func TestUpsert_CloseVectorsReturnSameID(t *testing.T) {
 	repo := memory.NewRepository()
 	cfg := vectorConfig(4)
 	cfg.CosineThreshold = 0.5
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	v1 := []float64{1.0, 2.0, 3.0, 4.0}
 	v2 := []float64{1.1, 2.1, 3.1, 4.1}
@@ -162,7 +182,11 @@ func TestUpsert_FarVectorsReturnDifferentID(t *testing.T) {
 	repo := memory.NewRepository()
 	cfg := vectorConfig(4)
 	cfg.CosineThreshold = 0.9
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1, err := svc.Upsert(ctx, "grp", []float64{1.0, 0.0, 0.0, 0.0})
 	if err != nil {
@@ -182,7 +206,11 @@ func TestUpsert_FarVectorsReturnDifferentID(t *testing.T) {
 func TestUpsert_DeterministicID(t *testing.T) {
 	ctx := context.Background()
 	repo := newSpyRepository()
-	svc := NewService(repo, vectorConfig(3))
+
+	svc, err := NewService(repo, vectorConfig(3))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	vec := []float64{1.0, 2.0, 3.0}
 
@@ -214,7 +242,11 @@ func TestUpsert_ResolvedCache(t *testing.T) {
 	repo := newSpyRepository()
 	cfg := vectorConfig(4)
 	cfg.CosineThreshold = 0.5
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	v1 := []float64{1.0, 2.0, 3.0, 4.0}
 	v2 := []float64{1.1, 2.1, 3.1, 4.1}
@@ -260,7 +292,10 @@ func TestUpsert_L2CacheSurvivesPodRestart(t *testing.T) {
 	cfg := vectorConfig(4)
 	cfg.CosineThreshold = 0.5
 
-	svc1 := NewService(repo, cfg)
+	svc1, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	v1 := []float64{1.0, 2.0, 3.0, 4.0}
 	v2 := []float64{1.1, 2.1, 3.1, 4.1}
@@ -276,7 +311,10 @@ func TestUpsert_L2CacheSurvivesPodRestart(t *testing.T) {
 	}
 
 	// Simulate pod restart: new service instance, same repo
-	svc2 := NewService(repo, cfg)
+	svc2, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id, err := svc2.Upsert(ctx, "grp", v2)
 	if err != nil {
@@ -294,7 +332,11 @@ func TestUpsert_ManyUniqueVectors(t *testing.T) {
 	cfg := vectorConfig(3)
 	cfg.Bands = 5
 	cfg.Rows = 2
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	for i := 0; i < 50; i++ {
 		_, err := svc.Upsert(ctx, "grp", []float64{float64(i * 100), float64(i*100 + 1), float64(i*100 + 2)})
@@ -304,14 +346,17 @@ func TestUpsert_ManyUniqueVectors(t *testing.T) {
 	}
 
 	// Should not error with many representatives per bucket
-	_, err := svc.Upsert(ctx, "grp", []float64{99.0, 100.0, 101.0})
+	_, err = svc.Upsert(ctx, "grp", []float64{99.0, 100.0, 101.0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestGetNewID(t *testing.T) {
-	svc := NewService(memory.NewRepository(), vectorConfig(3))
+	svc, err := NewService(memory.NewRepository(), vectorConfig(3))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1 := svc.GetNewID([]float64{1.0, 2.0, 3.0})
 	id2 := svc.GetNewID([]float64{1.0, 2.0, 3.0})
@@ -334,7 +379,11 @@ func BenchmarkUpsert(b *testing.B) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
 	cfg := vectorConfig(18)
-	svc := NewService(repo, cfg)
+
+	svc, err := NewService(repo, cfg)
+	if err != nil {
+		b.Fatalf("NewService: %v", err)
+	}
 
 	vec := make([]float64, 18)
 	for i := range vec {

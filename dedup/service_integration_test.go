@@ -41,7 +41,11 @@ func integrationConfig() *Config {
 func TestDedupUpsert_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
-	svc := NewService(repo, integrationConfig())
+
+	svc, err := NewService(repo, integrationConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1, err := svc.Upsert(ctx, "email", "maxim@weavers.team")
 	if err != nil {
@@ -71,12 +75,25 @@ func TestDedupUpsert_Aerospike(t *testing.T) {
 	if id1 == id3 {
 		t.Error("dissimilar strings should get different IDs")
 	}
+
+	id4, err := svc.Upsert(ctx, "email", "completely_different_inpat@example.org")
+	if err != nil {
+		t.Fatalf("Upsert 3: %v", err)
+	}
+
+	if id4 != id3 {
+		t.Error("similar new strings should get same IDs")
+	}
 }
 
 func TestDedupUpsert_ExactDuplicate_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
-	svc := NewService(repo, integrationConfig())
+
+	svc, err := NewService(repo, integrationConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1, _ := svc.Upsert(ctx, "grp", "exact_duplicate_test")
 	id2, _ := svc.Upsert(ctx, "grp", "exact_duplicate_test")
@@ -92,7 +109,10 @@ func TestDedupUpsert_L2CachePersistence_Aerospike(t *testing.T) {
 	cfg := integrationConfig()
 
 	// Service 1: insert and resolve
-	svc1 := NewService(repo, cfg)
+	svc1, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	originalID, err := svc1.Upsert(ctx, "email", "maxim@weavers.team")
 	if err != nil {
@@ -109,7 +129,10 @@ func TestDedupUpsert_L2CachePersistence_Aerospike(t *testing.T) {
 	}
 
 	// Service 2: simulate pod restart (new service, same repo)
-	svc2 := NewService(repo, cfg)
+	svc2, err := NewService(repo, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id, err := svc2.Upsert(ctx, "email", "maxim@weavets.team")
 	if err != nil {
@@ -124,7 +147,11 @@ func TestDedupUpsert_L2CachePersistence_Aerospike(t *testing.T) {
 func TestDedupUpsert_MultipleGroups_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
-	svc := NewService(repo, integrationConfig())
+
+	svc, err := NewService(repo, integrationConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	id1, _ := svc.Upsert(ctx, "org1", "John Doe")
 	id2, _ := svc.Upsert(ctx, "org2", "John Doe")
@@ -139,7 +166,11 @@ func TestDedupUpsert_MultipleGroups_Aerospike(t *testing.T) {
 func TestDedupUpsert_Scale_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
-	svc := NewService(repo, integrationConfig())
+
+	svc, err := NewService(repo, integrationConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Insert 100 unique strings
 	for i := 0; i < 100; i++ {
@@ -155,7 +186,11 @@ func TestDedupUpsert_Scale_Aerospike(t *testing.T) {
 func TestDedupUpsert_1000Strings_GroupValidation_Aerospike(t *testing.T) {
 	repo := aerospikeRepo(t)
 	ctx := context.Background()
-	svc := NewService(repo, integrationConfig())
+
+	svc, err := NewService(repo, integrationConfig())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
 
 	// Define 5 groups of similar strings (200 per group)
 	groups := []struct {
