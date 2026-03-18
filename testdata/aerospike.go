@@ -17,8 +17,8 @@ const (
 	Namespace = "test"
 )
 
-// WaitForAerospike blocks until Aerospike is fully ready to accept all operations
-// (write, truncate, batch). Returns an error if not ready within timeout.
+// WaitForAerospike blocks until Aerospike is fully ready to accept operations.
+// Probes with write, read, delete, and batch — no truncate (which causes FAIL_FORBIDDEN).
 func WaitForAerospike(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 
@@ -53,8 +53,17 @@ func probeAerospike() error {
 		return fmt.Errorf("write: %w", err)
 	}
 
-	if err := client.Truncate(nil, Namespace, "readiness", nil); err != nil {
-		return fmt.Errorf("truncate: %w", err)
+	rec, err := client.Get(nil, key)
+	if err != nil {
+		return fmt.Errorf("read: %w", err)
+	}
+
+	if rec == nil {
+		return fmt.Errorf("read: record not found after write")
+	}
+
+	if _, err := client.Delete(nil, key); err != nil {
+		return fmt.Errorf("delete: %w", err)
 	}
 
 	keys := make([]*as.Key, 2) //nolint:mnd
