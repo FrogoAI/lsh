@@ -298,6 +298,100 @@ func TestBatchSetRepresentative_Idempotent(t *testing.T) {
 	}
 }
 
+func TestMaxBucketReps_RejectsNewAtCap(t *testing.T) {
+	repo := NewRepository(WithMaxBucketReps(3))
+
+	_ = repo.SetRepresentative("b1", "u1", 1)
+	_ = repo.SetRepresentative("b1", "u2", 2)
+	_ = repo.SetRepresentative("b1", "u3", 3)
+	_ = repo.SetRepresentative("b1", "u4", 4) // should be rejected
+
+	reps, _ := repo.GetRepresentatives("b1")
+	if len(reps) != 3 {
+		t.Errorf("expected 3 reps (cap), got %d", len(reps))
+	}
+
+	ids := make(map[string]bool)
+	for _, r := range reps {
+		ids[r.ID] = true
+	}
+
+	if ids["u4"] {
+		t.Error("u4 should have been rejected (at cap)")
+	}
+}
+
+func TestMaxBucketReps_AllowsUpdateAtCap(t *testing.T) {
+	repo := NewRepository(WithMaxBucketReps(2))
+
+	_ = repo.SetRepresentative("b1", "u1", 1)
+	_ = repo.SetRepresentative("b1", "u2", 2)
+	_ = repo.SetRepresentative("b1", "u1", 99) // update existing, should work
+
+	reps, _ := repo.GetRepresentatives("b1")
+	if len(reps) != 2 {
+		t.Errorf("expected 2 reps, got %d", len(reps))
+	}
+
+	for _, r := range reps {
+		if r.ID == "u1" && r.Metadata != 99 {
+			t.Errorf("u1 metadata: expected 99, got %d", r.Metadata)
+		}
+	}
+}
+
+func TestMaxBucketReps_BatchRespectsCapPerBucket(t *testing.T) {
+	repo := NewRepository(WithMaxBucketReps(2))
+
+	_ = repo.BatchSetRepresentative([]string{"b1", "b2"}, "u1", 1)
+	_ = repo.BatchSetRepresentative([]string{"b1", "b2"}, "u2", 2)
+	_ = repo.BatchSetRepresentative([]string{"b1", "b2"}, "u3", 3) // rejected
+
+	reps1, _ := repo.GetRepresentatives("b1")
+	reps2, _ := repo.GetRepresentatives("b2")
+
+	if len(reps1) != 2 {
+		t.Errorf("b1: expected 2 reps, got %d", len(reps1))
+	}
+
+	if len(reps2) != 2 {
+		t.Errorf("b2: expected 2 reps, got %d", len(reps2))
+	}
+}
+
+func TestMaxBucketReps_ZeroMeansUnlimited(t *testing.T) {
+	repo := NewRepository() // no WithMaxBucketReps = 0 = unlimited
+
+	for i := 0; i < 100; i++ {
+		_ = repo.SetRepresentative("b1", "u"+string(rune('A'+i)), int64(i))
+	}
+
+	reps, _ := repo.GetRepresentatives("b1")
+	if len(reps) != 100 {
+		t.Errorf("expected 100 reps (unlimited), got %d", len(reps))
+	}
+}
+
+func TestMaxBucketReps_IndependentBuckets(t *testing.T) {
+	repo := NewRepository(WithMaxBucketReps(2))
+
+	_ = repo.SetRepresentative("b1", "u1", 1)
+	_ = repo.SetRepresentative("b1", "u2", 2)
+	_ = repo.SetRepresentative("b2", "u3", 3)
+	_ = repo.SetRepresentative("b2", "u4", 4)
+
+	reps1, _ := repo.GetRepresentatives("b1")
+	reps2, _ := repo.GetRepresentatives("b2")
+
+	if len(reps1) != 2 {
+		t.Errorf("b1: expected 2, got %d", len(reps1))
+	}
+
+	if len(reps2) != 2 {
+		t.Errorf("b2: expected 2, got %d", len(reps2))
+	}
+}
+
 func TestClose(_ *testing.T) {
 	repo := NewRepository()
 	repo.Close()

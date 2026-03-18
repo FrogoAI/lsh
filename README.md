@@ -249,6 +249,65 @@ The representative count grows with the number of **distinct clusters**, not the
 | Per-query network | ~55 MB (40 x 1.4 MB) | ~55 KB (40 x 1.4 KB) |
 | Aerospike record size | ~1.4 MB (may exceed limit) | ~2 KB |
 
+## Candidate ranking (multi-probe)
+
+When querying, the system collects candidates from **all** bands, counts how many bands each candidate appears in, and ranks them by overlap count (descending). The top `MaxTotalCandidates` are selected for record loading and verification.
+
+This is important because:
+- Candidates sharing more bands are exponentially more likely to be true matches
+- Without ranking, a naive "break after N candidates" approach degrades recall from 99.5% to 23.2% once buckets have >100 representatives
+- Ranking preserves full recall (all bands searched) while bounding the expensive verification step
+
+## Scaling analysis (10M users)
+
+### Single record size (Bands=20, Rows=5, Dims=20)
+
+| Component | Bytes |
+|---|---|
+| Key (base64url SHA256[:16]) | 22 |
+| Vector (20 x float64) | 160 |
+| Signature (100 x uint64) | 800 |
+| Group string | ~20 |
+| Overhead (headers, bin names) | ~90 |
+| **Total** | **~1.1 KB** |
+
+### Storage at scale
+
+| Scenario | Records | Buckets | Resolved cache | Total |
+|---|---|---|---|---|
+| 1M users, 1K clusters | 1 MB | 1 MB | 93 MB | **95 MB** |
+| 1M users, 10K clusters | 10 MB | 9 MB | 93 MB | **112 MB** |
+| 10M users, 10K clusters | 10 MB | 9 MB | 934 MB | **953 MB** |
+| 10M users, 100K clusters | 104 MB | 86 MB | 925 MB | **1.1 GB** |
+| 10M users, 1M clusters | 1 GB | 858 MB | 841 MB | **2.7 GB** |
+
+The dominant cost at 10M users is the **resolved cache** (~93 bytes per resolved user). Records and buckets are proportional to cluster count, not user count.
+
+### Bucket size vs cluster count (Rows=5, 32 slots per band)
+
+| Clusters | Reps/bucket | Bucket size | Fits Aerospike 1MB |
+|---|---|---|---|
+| 1,000 | 31 | 1.4 KB | yes |
+| 10,000 | 312 | 14 KB | yes |
+| 100,000 | 3,125 | 137 KB | yes |
+| 1,000,000 | 31,250 | 1.4 MB | **no** |
+
+**Aerospike limit**: default `write-block-size` is 1 MB. At >500K distinct clusters, bucket records exceed this. For high-cluster-count use cases, increase `write-block-size` to 8 MB or increase `Rows` (more slots per band).
+
+### Recall vs cluster count
+
+With multi-probe ranking, recall is maintained regardless of cluster count. The system searches all bands and ranks by overlap. `MaxTotalCandidates` limits only the verification step (record loading + similarity check), not band scanning.
+
+| Clusters | MaxTotalCandidates | Recall (cos=0.7) |
+|---|---|---|
+| 20 | 100 | 100% |
+| 100 | 50 | 97% |
+| 200 | 20 | 97% |
+
+### Precision guarantee
+
+The algorithm guarantees: if input V is resolved to representative R, then `ExactCosine(V, R.Vector) >= CosineThreshold`. This is enforced by the exact verification step. The estimated similarity filter (signature comparison) uses a margin to avoid false negatives but the final decision is always exact.
+
 ## Known issues and mitigations
 
 ### 1. Binary hyperplane bucket cardinality

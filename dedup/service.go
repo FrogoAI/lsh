@@ -5,12 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"log/slog"
+	"sort"
 	"sync"
 
 	"github.com/FrogoAI/lsh/v2"
 	"github.com/FrogoAI/lsh/v2/repositories"
 	"github.com/FrogoAI/multiproc/worker"
-	"github.com/FrogoAI/set"
 )
 
 const jaccardMargin = 0.1
@@ -123,25 +123,9 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 		return "", err
 	}
 
-	candidateSet := set.NewGenericDataSet[string]()
+	ids := s.collectCandidates(bucketKeys, allReps, int64(minLen), int64(maxLen))
 
-	for _, bk := range bucketKeys {
-		if candidateSet.Count() >= s.config.MaxTotalCandidates {
-			break
-		}
-
-		for _, rep := range allReps[bk] {
-			if rep.Metadata < int64(minLen) || rep.Metadata > int64(maxLen) {
-				continue
-			}
-
-			candidateSet.Add(rep.ID)
-		}
-	}
-
-	if candidateSet.Count() > 0 {
-		ids := candidateSet.ToSlice()
-
+	if len(ids) > 0 {
 		rawRecords, err := s.repo.GetRecords(ids)
 		if err != nil {
 			return "", err
@@ -204,4 +188,55 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 	})
 
 	return bid, pool.Wait()
+}
+
+// collectCandidates scans all bands, counts band overlap per candidate,
+// filters by metadata (shingle length), and returns the top MaxTotalCandidates
+// sorted by overlap count (descending).
+func (s *Service) collectCandidates(
+	bucketKeys []string,
+	allReps map[string][]repositories.Representative,
+	minMeta, maxMeta int64,
+) []string {
+	bandCount := make(map[string]int)
+
+	for _, bk := range bucketKeys {
+		for _, rep := range allReps[bk] {
+			if rep.Metadata < minMeta || rep.Metadata > maxMeta {
+				continue
+			}
+
+			bandCount[rep.ID]++
+		}
+	}
+
+	if len(bandCount) == 0 {
+		return nil
+	}
+
+	type ranked struct {
+		id    string
+		bands int
+	}
+
+	candidates := make([]ranked, 0, len(bandCount))
+	for id, count := range bandCount {
+		candidates = append(candidates, ranked{id: id, bands: count})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].bands > candidates[j].bands
+	})
+
+	limit := len(candidates)
+	if s.config.MaxTotalCandidates > 0 && limit > s.config.MaxTotalCandidates {
+		limit = s.config.MaxTotalCandidates
+	}
+
+	ids := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		ids[i] = candidates[i].id
+	}
+
+	return ids
 }

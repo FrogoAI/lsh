@@ -1,6 +1,8 @@
 package aerospike
 
 import (
+	"log/slog"
+
 	as "github.com/aerospike/aerospike-client-go/v8"
 	"github.com/aerospike/aerospike-client-go/v8/types"
 
@@ -22,15 +24,35 @@ type Repository struct {
 
 	writePolicy *as.WritePolicy
 	readPolicy  *as.BasePolicy
+
+	maxBucketReps int
 }
 
-func NewRepository(client *as.Client, namespace, set string) *Repository {
-	return &Repository{
+func NewRepository(client *as.Client, namespace, set string, opts ...Option) *Repository {
+	r := &Repository{
 		client:      client,
 		namespace:   namespace,
 		set:         set,
 		writePolicy: as.NewWritePolicy(0, 0),
 		readPolicy:  as.NewPolicy(),
+	}
+
+	for _, o := range opts {
+		o(r)
+	}
+
+	return r
+}
+
+// Option configures the Aerospike repository.
+type Option func(*Repository)
+
+// WithMaxBucketReps sets the maximum number of representatives per bucket.
+// When exceeded, the oldest entries (by key order) are trimmed.
+// 0 (default) means unlimited.
+func WithMaxBucketReps(n int) Option {
+	return func(r *Repository) {
+		r.maxBucketReps = n
 	}
 }
 
@@ -40,15 +62,24 @@ func (r *Repository) SetRepresentative(bucketKey, memberID string, metadata int6
 		return err
 	}
 
-	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
-	op := as.MapPutOp(mapPolicy, binMembers, memberID, metadata)
+	mapPolicy := as.NewMapPolicy(as.MapOrder.KEY_ORDERED, as.MapWriteMode.UPDATE)
 
 	wp := *r.writePolicy
 	wp.Expiration = bucketTTL
 
-	_, err = r.client.Operate(&wp, key, op)
+	ops := []*as.Operation{
+		as.MapPutOp(mapPolicy, binMembers, memberID, metadata),
+		as.MapSizeOp(binMembers),
+	}
 
-	return err
+	record, err := r.client.Operate(&wp, key, ops...)
+	if err != nil {
+		return err
+	}
+
+	r.trimIfNeeded(&wp, key, record)
+
+	return nil
 }
 
 func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string, metadata int64) error {
@@ -56,8 +87,9 @@ func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string
 		return nil
 	}
 
-	mapPolicy := as.NewMapPolicy(as.MapOrder.UNORDERED, as.MapWriteMode.UPDATE)
-	op := as.MapPutOp(mapPolicy, binMembers, memberID, metadata)
+	mapPolicy := as.NewMapPolicy(as.MapOrder.KEY_ORDERED, as.MapWriteMode.UPDATE)
+	putOp := as.MapPutOp(mapPolicy, binMembers, memberID, metadata)
+	sizeOp := as.MapSizeOp(binMembers)
 
 	records := make([]as.BatchRecordIfc, len(bucketKeys))
 
@@ -70,10 +102,75 @@ func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string
 			return err
 		}
 
-		records[i] = as.NewBatchWrite(wp, key, op)
+		records[i] = as.NewBatchWrite(wp, key, putOp, sizeOp)
 	}
 
-	return r.client.BatchOperate(nil, records)
+	if err := r.client.BatchOperate(nil, records); err != nil {
+		return err
+	}
+
+	if r.maxBucketReps <= 0 {
+		return nil
+	}
+
+	// Trim oversized buckets (best-effort, fire-and-forget per key)
+	trimWP := *r.writePolicy
+	trimWP.Expiration = bucketTTL
+
+	for i, br := range records {
+		bw, ok := br.(*as.BatchWrite)
+		if !ok || bw.Record == nil {
+			continue
+		}
+
+		size, ok := bw.Record.Bins[binMembers].(int)
+		if !ok || size <= r.maxBucketReps {
+			continue
+		}
+
+		key, err := as.NewKey(r.namespace, r.set, bucketKeys[i])
+		if err != nil {
+			continue
+		}
+
+		excess := size - r.maxBucketReps
+		trimOp := as.MapRemoveByIndexRangeCountOp(binMembers, 0, excess, as.MapReturnType.NONE)
+
+		if _, err := r.client.Operate(&trimWP, key, trimOp); err != nil {
+			slog.Warn("failed to trim bucket",
+				slog.String("bucket", bucketKeys[i]),
+				slog.Int("size", size),
+				slog.Int("max", r.maxBucketReps),
+				slog.Any("error", err),
+			)
+		}
+	}
+
+	return nil
+}
+
+// trimIfNeeded removes excess entries from a bucket after a MapPut+MapSize Operate.
+func (r *Repository) trimIfNeeded(wp *as.WritePolicy, key *as.Key, record *as.Record) {
+	if r.maxBucketReps <= 0 || record == nil {
+		return
+	}
+
+	size, ok := record.Bins[binMembers].(int)
+	if !ok || size <= r.maxBucketReps {
+		return
+	}
+
+	excess := size - r.maxBucketReps
+	trimOp := as.MapRemoveByIndexRangeCountOp(binMembers, 0, excess, as.MapReturnType.NONE)
+
+	if _, err := r.client.Operate(wp, key, trimOp); err != nil {
+		slog.Warn("failed to trim bucket",
+			slog.String("key", key.String()),
+			slog.Int("size", size),
+			slog.Int("max", r.maxBucketReps),
+			slog.Any("error", err),
+		)
+	}
 }
 
 func (r *Repository) GetRepresentatives(bucketKey string) ([]repositories.Representative, error) {

@@ -7,17 +7,35 @@ import (
 )
 
 type Repository struct {
-	mu      sync.RWMutex
-	buckets map[string]map[string]int64 // bucketKey -> memberID -> metadata
-	records map[string]map[string]any
-	values  map[string]string
+	mu            sync.RWMutex
+	buckets       map[string]map[string]int64 // bucketKey -> memberID -> metadata
+	records       map[string]map[string]any
+	values        map[string]string
+	maxBucketReps int
 }
 
-func NewRepository() *Repository {
-	return &Repository{
+func NewRepository(opts ...Option) *Repository {
+	r := &Repository{
 		buckets: make(map[string]map[string]int64),
 		records: make(map[string]map[string]any),
 		values:  make(map[string]string),
+	}
+
+	for _, o := range opts {
+		o(r)
+	}
+
+	return r
+}
+
+// Option configures the memory repository.
+type Option func(*Repository)
+
+// WithMaxBucketReps sets the maximum number of representatives per bucket.
+// 0 (default) means unlimited.
+func WithMaxBucketReps(n int) Option {
+	return func(r *Repository) {
+		r.maxBucketReps = n
 	}
 }
 
@@ -31,7 +49,7 @@ func (r *Repository) SetRepresentative(bucketKey, memberID string, metadata int6
 		r.buckets[bucketKey] = m
 	}
 
-	m[memberID] = metadata
+	r.setRep(m, memberID, metadata)
 
 	return nil
 }
@@ -47,10 +65,26 @@ func (r *Repository) BatchSetRepresentative(bucketKeys []string, memberID string
 			r.buckets[k] = m
 		}
 
-		m[memberID] = metadata
+		r.setRep(m, memberID, metadata)
 	}
 
 	return nil
+}
+
+// setRep inserts or updates a representative, respecting the bucket cap.
+// Existing entries are always updated. New entries are rejected if at cap.
+func (r *Repository) setRep(m map[string]int64, memberID string, metadata int64) {
+	if _, exists := m[memberID]; exists {
+		m[memberID] = metadata
+
+		return
+	}
+
+	if r.maxBucketReps > 0 && len(m) >= r.maxBucketReps {
+		return
+	}
+
+	m[memberID] = metadata
 }
 
 func (r *Repository) GetRepresentatives(bucketKey string) ([]repositories.Representative, error) {
