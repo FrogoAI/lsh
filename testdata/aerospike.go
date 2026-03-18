@@ -17,33 +17,36 @@ const (
 	Namespace = "test"
 )
 
-// WaitForAerospike blocks until Aerospike is fully ready to accept operations.
-// Probes with write, read, delete, and batch — no truncate (which causes FAIL_FORBIDDEN).
-func WaitForAerospike(timeout time.Duration) error {
+// NewReadyClient creates an Aerospike client and blocks until the server
+// is fully ready to accept operations. Returns the connected client.
+// The caller is responsible for closing the client.
+func NewReadyClient(timeout time.Duration) (*as.Client, error) {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		if err := probeAerospike(); err != nil {
+		client, err := as.NewClient(Host, Port)
+		if err != nil {
+			fmt.Printf("Aerospike connecting... %v\n", err) //nolint:forbidigo
+			time.Sleep(2 * time.Second)                      //nolint:mnd
+
+			continue
+		}
+
+		if err := probe(client); err != nil {
+			client.Close()
 			fmt.Printf("Aerospike not ready: %v\n", err) //nolint:forbidigo
 			time.Sleep(2 * time.Second)                   //nolint:mnd
 
 			continue
 		}
 
-		return nil
+		return client, nil
 	}
 
-	return fmt.Errorf("aerospike not ready after %s", timeout)
+	return nil, fmt.Errorf("aerospike not ready after %s", timeout)
 }
 
-func probeAerospike() error {
-	client, err := as.NewClient(Host, Port)
-	if err != nil {
-		return err
-	}
-
-	defer client.Close()
-
+func probe(client *as.Client) error {
 	key, err := as.NewKey(Namespace, "readiness", "probe")
 	if err != nil {
 		return err
@@ -53,26 +56,8 @@ func probeAerospike() error {
 		return fmt.Errorf("write: %w", err)
 	}
 
-	rec, err := client.Get(nil, key)
-	if err != nil {
-		return fmt.Errorf("read: %w", err)
-	}
-
-	if rec == nil {
-		return fmt.Errorf("read: record not found after write")
-	}
-
 	if _, err := client.Delete(nil, key); err != nil {
 		return fmt.Errorf("delete: %w", err)
-	}
-
-	keys := make([]*as.Key, 2) //nolint:mnd
-	for i := range keys {
-		keys[i], _ = as.NewKey(Namespace, "readiness", fmt.Sprintf("b%d", i))
-	}
-
-	if _, err := client.BatchGet(nil, keys, "ok"); err != nil {
-		return fmt.Errorf("batch: %w", err)
 	}
 
 	return nil

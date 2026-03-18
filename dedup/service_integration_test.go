@@ -18,26 +18,25 @@ import (
 	"github.com/FrogoAI/lsh/v2/testdata"
 )
 
+var sharedClient *as.Client //nolint:gochecknoglobals
+
 func TestMain(m *testing.M) {
-	if err := testdata.WaitForAerospike(90 * time.Second); err != nil {
+	client, err := testdata.NewReadyClient(90 * time.Second)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "aerospike: %v\n", err)
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	sharedClient = client
+	code := m.Run()
+	client.Close()
+	os.Exit(code)
 }
 
 func aerospikeRepo(t *testing.T) *asrepo.Repository {
 	t.Helper()
 
-	client, err := as.NewClient(testdata.Host, testdata.Port)
-	if err != nil {
-		t.Fatalf("failed to connect to Aerospike: %v", err)
-	}
-
-	t.Cleanup(func() { client.Close() })
-
-	return asrepo.NewRepository(client, testdata.Namespace, uniqueSet())
+	return asrepo.NewRepository(sharedClient, testdata.Namespace, uniqueSet())
 }
 
 func uniqueSet() string {
