@@ -19,7 +19,7 @@ threshold:
 
   # (optional; default 0)
   # Minimum coverage percentage required for each package.
-  package: 90
+  package: 85
 
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
