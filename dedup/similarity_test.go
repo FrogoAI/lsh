@@ -15,7 +15,7 @@ func TestShingle(t *testing.T) {
 	}{
 		{
 			name:     "normal sentence",
-			input:    "hello",
+			input:    testHelloInput,
 			expected: []string{"^he", "hel", "ell", "llo", "lo$"},
 		},
 		{
@@ -88,7 +88,7 @@ func TestCalculateJaccardOptimized(t *testing.T) {
 		targetStr string
 		want      float64
 	}{
-		{name: "exact match", sourceStr: "hello", targetStr: "hello", want: 1.0},
+		{name: "exact match", sourceStr: testHelloInput, targetStr: testHelloInput, want: 1.0},
 		{name: "completely different", sourceStr: "aaaaa", targetStr: "bbbbb", want: 0.0},
 		{name: "partial overlap", sourceStr: "context", targetStr: "content", want: 0.6666666666666666},
 		{name: "empty source", sourceStr: "", targetStr: "anything", want: 0.0},

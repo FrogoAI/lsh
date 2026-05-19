@@ -7,9 +7,12 @@ import (
 )
 
 const (
-	defaultMaxBands       = 40
-	defaultMaxRows        = 10
-	referenceRecordAmount = 100_000_000
+	defaultMaxBands                 = 40
+	defaultMaxRows                  = 10
+	defaultBackgroundSimilarityRate = 0.5
+	fractionalPercentCutoff         = 0.05
+	percentScale                    = 100
+	referenceRecordAmount           = 100_000_000
 )
 
 type Request struct {
@@ -56,14 +59,26 @@ func Calculate(req Request) (Result, error) {
 		maxBands = defaultMaxBands
 	}
 
+	if maxBands < 0 {
+		return Result{}, fmt.Errorf("max bands must be positive")
+	}
+
 	maxRows := req.MaxRows
 	if maxRows == 0 {
 		maxRows = defaultMaxRows
 	}
 
+	if maxRows < 0 {
+		return Result{}, fmt.Errorf("max rows must be positive")
+	}
+
 	backgroundSimilarity := normalizeProbability(req.BackgroundSimilarity)
-	if backgroundSimilarity <= 0 {
-		backgroundSimilarity = jaccard / 2
+	if req.BackgroundSimilarity == 0 {
+		backgroundSimilarity = jaccard * defaultBackgroundSimilarityRate
+	}
+
+	if backgroundSimilarity <= 0 || backgroundSimilarity >= 1 {
+		return Result{}, fmt.Errorf("background similarity must be between 0 and 1 or 0 and 100")
 	}
 
 	if backgroundSimilarity >= jaccard {
@@ -71,11 +86,13 @@ func Calculate(req Request) (Result, error) {
 	}
 
 	var best Result
+
 	hasBest := false
 
 	for bands := 1; bands <= maxBands; bands++ {
 		for rows := 1; rows <= maxRows; rows++ {
 			candidateProbability := probability(jaccard, bands, rows)
+
 			missProbability := 1 - candidateProbability
 			if missProbability > errorRate {
 				continue
@@ -117,15 +134,15 @@ func probability(similarity float64, bands int, rows int) float64 {
 
 func normalizeProbability(value float64) float64 {
 	if value > 1 {
-		return value / 100
+		return value / percentScale
 	}
 
 	return value
 }
 
 func normalizeErrorRate(value float64) float64 {
-	if value > 0.05 {
-		return value / 100
+	if value > fractionalPercentCutoff {
+		return value / percentScale
 	}
 
 	return value

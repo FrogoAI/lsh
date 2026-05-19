@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/FrogoAI/lsh/v2/dedup/lshcalc"
 	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/FrogoAI/lsh/v2"
+	"github.com/FrogoAI/lsh/v2/dedup/lshcalc"
 	"github.com/FrogoAI/lsh/v2/repositories"
 	"github.com/FrogoAI/lsh/v2/repositories/memory"
 )
@@ -61,7 +61,9 @@ func TestUpsert90(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	fmt.Println(id, id2)
+	if id != id2 {
+		t.Errorf("expected same id for threshold match, got %s vs %s", id, id2)
+	}
 }
 
 func TestUpsertEmail(t *testing.T) {
@@ -195,14 +197,14 @@ func TestUpsert_ManyUniqueInputs(t *testing.T) {
 	}
 
 	for i := 0; i < 50; i++ {
-		_, err := svc.Upsert(ctx, "grp", "user"+strconv.Itoa(i)+"@example.com")
+		_, err := svc.Upsert(ctx, testGroupID, "user"+strconv.Itoa(i)+"@example.com")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}
 
 	// Should not error with many representatives per bucket
-	id, err := svc.Upsert(ctx, "grp", "completely_different_string_xyz")
+	id, err := svc.Upsert(ctx, testGroupID, "completely_different_string_xyz")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -265,7 +267,7 @@ func TestUpsert_DeterministicID(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	id1, err := svc.Upsert(ctx, "grp", "optimization_test_input")
+	id1, err := svc.Upsert(ctx, testGroupID, "optimization_test_input")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -274,7 +276,7 @@ func TestUpsert_DeterministicID(t *testing.T) {
 		t.Error("expected 1 save call")
 	}
 
-	id2, err := svc.Upsert(ctx, "grp", "optimization_test_input")
+	id2, err := svc.Upsert(ctx, testGroupID, "optimization_test_input")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -415,14 +417,14 @@ func TestUpsert_MaxTotalCandidatesCap(t *testing.T) {
 	}
 
 	for i := 0; i < 20; i++ {
-		_, err := svc.Upsert(ctx, "grp", "candidate"+strconv.Itoa(i)+"@test.com")
+		_, err := svc.Upsert(ctx, testGroupID, "candidate"+strconv.Itoa(i)+"@test.com")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	}
 
 	// Should not panic or error with many candidates
-	_, err = svc.Upsert(ctx, "grp", "candidate99@test.com")
+	_, err = svc.Upsert(ctx, testGroupID, "candidate99@test.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -434,8 +436,8 @@ func TestGetNewID(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	id1 := svc.GetNewID("hello")
-	id2 := svc.GetNewID("hello")
+	id1 := svc.GetNewID(testHelloInput)
+	id2 := svc.GetNewID(testHelloInput)
 	id3 := svc.GetNewID("world")
 
 	if id1 != id2 {
@@ -491,14 +493,14 @@ func TestRecordFromBins_Branches(t *testing.T) {
 	}{
 		{
 			name:   "valid with []uint64 signature",
-			bins:   map[string]any{"i": "hello", "g": "grp", "s": []uint64{1, 2, 3}},
+			bins:   map[string]any{"i": testHelloInput, "g": testGroupID, "s": []uint64{1, 2, 3}},
 			wantOK: true,
 			wantID: "k1",
 		},
 		{
 			name: "valid with []any signature (int types)",
 			bins: map[string]any{
-				"i": "hello", "g": "grp",
+				"i": testHelloInput, "g": testGroupID,
 				"s": []any{int(1), int64(2), float64(3)},
 			},
 			wantOK: true,
@@ -506,7 +508,7 @@ func TestRecordFromBins_Branches(t *testing.T) {
 		},
 		{
 			name:   "missing input returns false",
-			bins:   map[string]any{"g": "grp", "s": []uint64{1}},
+			bins:   map[string]any{"g": testGroupID, "s": []uint64{1}},
 			wantOK: false,
 		},
 		{
@@ -549,25 +551,25 @@ func TestUpsert_WithMetrics(t *testing.T) {
 	svc.WithMetrics(inst)
 
 	// Novel -> ResultNew
-	_, err = svc.Upsert(ctx, "grp", "maxim@weavers.team")
+	_, err = svc.Upsert(ctx, testGroupID, "maxim@weavers.team")
 	if err != nil {
 		t.Fatalf("novel: %v", err)
 	}
 
 	// Exact duplicate -> ResultL1Hit
-	_, err = svc.Upsert(ctx, "grp", "maxim@weavers.team")
+	_, err = svc.Upsert(ctx, testGroupID, "maxim@weavers.team")
 	if err != nil {
 		t.Fatalf("l1 hit: %v", err)
 	}
 
 	// Similar -> ResultMatch
-	_, err = svc.Upsert(ctx, "grp", "maxim@weavets.team")
+	_, err = svc.Upsert(ctx, testGroupID, "maxim@weavets.team")
 	if err != nil {
 		t.Fatalf("match: %v", err)
 	}
 
 	// Same similar again -> ResultL2Hit
-	_, err = svc.Upsert(ctx, "grp", "maxim@weavets.team")
+	_, err = svc.Upsert(ctx, testGroupID, "maxim@weavets.team")
 	if err != nil {
 		t.Fatalf("l2 hit: %v", err)
 	}

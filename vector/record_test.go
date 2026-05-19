@@ -6,6 +6,8 @@ import (
 	"github.com/FrogoAI/lsh/v2/repositories"
 )
 
+const testRecordGroupID = "grp"
+
 func TestRecordFromBins(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -14,21 +16,21 @@ func TestRecordFromBins(t *testing.T) {
 	}{
 		{
 			name:   "valid with native types",
-			bins:   map[string]any{"v": []float64{1.0, 2.0}, "g": "grp", "s": []uint64{0, 1}},
+			bins:   map[string]any{"v": []float64{1.0, 2.0}, "g": testRecordGroupID, "s": []uint64{0, 1}},
 			wantOK: true,
 		},
 		{
 			name: "valid with []any vector (mixed numeric)",
 			bins: map[string]any{
 				"v": []any{float64(1.0), int(2), int64(3)},
-				"g": "grp",
+				"g": testRecordGroupID,
 				"s": []any{int(0), int64(1), float64(0)},
 			},
 			wantOK: true,
 		},
 		{
 			name:   "missing vector returns false",
-			bins:   map[string]any{"g": "grp", "s": []uint64{1}},
+			bins:   map[string]any{"g": testRecordGroupID, "s": []uint64{1}},
 			wantOK: false,
 		},
 		{
@@ -62,7 +64,7 @@ func TestRecordToBins(t *testing.T) {
 	rec := Record{
 		ID:        "u1",
 		Vector:    []float64{1.0, 2.0},
-		GroupID:   "grp",
+		GroupID:   testRecordGroupID,
 		Signature: []uint64{0, 1},
 	}
 
@@ -72,7 +74,7 @@ func TestRecordToBins(t *testing.T) {
 		t.Error("expected vector bin")
 	}
 
-	if bins["g"] != "grp" {
-		t.Errorf("expected group grp, got %v", bins["g"])
+	if bins["g"] != testRecordGroupID {
+		t.Errorf("expected group %s, got %v", testRecordGroupID, bins["g"])
 	}
 }

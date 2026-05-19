@@ -14,7 +14,7 @@ func TestSig0_Deterministic(t *testing.T) {
 	seed := int64(1)
 	bands := 10
 	rows := 2
-	input := "hello"
+	input := testHelloInput
 
 	hasher := NewHasher(bands, rows, seed)
 
@@ -134,7 +134,7 @@ func TestComputeSignature_SameSeedDeterministic(t *testing.T) {
 	h1 := NewHasher(10, 3, 99)
 	h2 := NewHasher(10, 3, 99)
 
-	tokens := set.NewGenericDataSet[string]("hello", "world")
+	tokens := set.NewGenericDataSet[string](testHelloInput, "world")
 	sig1 := make([]uint64, 30)
 	sig2 := make([]uint64, 30)
 
@@ -152,7 +152,7 @@ func TestComputeSignature_DifferentSeedsDiffer(t *testing.T) {
 	h1 := NewHasher(10, 3, 1)
 	h2 := NewHasher(10, 3, 2)
 
-	tokens := set.NewGenericDataSet[string]("hello", "world")
+	tokens := set.NewGenericDataSet[string](testHelloInput, "world")
 	sig1 := make([]uint64, 30)
 	sig2 := make([]uint64, 30)
 

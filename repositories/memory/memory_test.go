@@ -4,6 +4,11 @@ import (
 	"testing"
 )
 
+const (
+	missingKey = "missing"
+	newValue   = "new"
+)
+
 func TestSetRepresentative(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -139,7 +144,7 @@ func TestSaveAndGetRecords(t *testing.T) {
 		{
 			name:  "missing key returns nothing",
 			setup: func(_ *Repository) {},
-			keys:  []string{"missing"}, wantLen: 0,
+			keys:  []string{missingKey}, wantLen: 0,
 		},
 		{
 			name:  "empty keys slice",
@@ -156,15 +161,15 @@ func TestSaveAndGetRecords(t *testing.T) {
 			setup: func(r *Repository) {
 				_ = r.SaveRecord("r1", map[string]any{"x": 1})
 			},
-			keys: []string{"r1", "missing"}, wantLen: 1, wantKey: "r1",
+			keys: []string{"r1", missingKey}, wantLen: 1, wantKey: "r1",
 		},
 		{
 			name: "overwrite record",
 			setup: func(r *Repository) {
 				_ = r.SaveRecord("r1", map[string]any{"v": "old"})
-				_ = r.SaveRecord("r1", map[string]any{"v": "new"})
+				_ = r.SaveRecord("r1", map[string]any{"v": newValue})
 			},
-			keys: []string{"r1"}, wantLen: 1, wantKey: "r1", wantBin: "v", wantBinV: "new",
+			keys: []string{"r1"}, wantLen: 1, wantKey: "r1", wantBin: "v", wantBinV: newValue,
 		},
 		{
 			name: "empty bins",
@@ -217,7 +222,7 @@ func TestPutAndGetValue(t *testing.T) {
 		{
 			name:  "missing key returns empty",
 			setup: func(_ *Repository) {},
-			key:   "missing", want: "",
+			key:   missingKey, want: "",
 		},
 		{
 			name:  "empty key",
@@ -233,9 +238,9 @@ func TestPutAndGetValue(t *testing.T) {
 			name: "overwrite value",
 			setup: func(r *Repository) {
 				_ = r.PutValue("k", "old")
-				_ = r.PutValue("k", "new")
+				_ = r.PutValue("k", newValue)
 			},
-			key: "k", want: "new",
+			key: "k", want: newValue,
 		},
 	}
 
