@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/FrogoAI/lsh/v2/dedup/lshcalc"
 	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/FrogoAI/lsh/v2"
@@ -23,6 +24,44 @@ func defaultConfig() *Config {
 		ShingleSize:      3,
 		JaccardThreshold: 0.6,
 	}
+}
+
+func TestUpsert90(t *testing.T) {
+	ctx := context.Background()
+	repo := memory.NewRepository()
+
+	res, err := lshcalc.Calculate(lshcalc.Request{
+		Jaccard:     0.8,
+		ShingleSize: 2,
+		ErrorRate:   0.001,
+	})
+	if err != nil {
+		t.Fatalf("lshcalc.Calculate: %v", err)
+	}
+
+	svc, err := NewService(repo, &Config{
+		Config: lsh.Config{
+			Bands: res.Bands, Rows: res.Rows,
+			MaxBucketSize: 200, MaxTotalCandidates: 100, Seed: 13374269,
+		},
+		ShingleSize:      res.ShingleSize,
+		JaccardThreshold: 0.8,
+	})
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	id, err := svc.Upsert(ctx, "email", "abcdefghijkl")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	id2, err := svc.Upsert(ctx, "email", "abcdefghijklm")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	fmt.Println(id, id2)
 }
 
 func TestUpsertEmail(t *testing.T) {
