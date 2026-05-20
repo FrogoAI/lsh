@@ -19,7 +19,10 @@ import (
 	"github.com/FrogoAI/multiproc/worker"
 )
 
-const cosineMargin = 0.1
+const (
+	cosineMargin = 0.1
+	float64Bytes = 8
+)
 
 type Service struct {
 	hasher        *Hasher
@@ -58,12 +61,14 @@ func (s *Service) WithMetrics(m *lsh.Instruments) {
 	s.metrics = m
 }
 
-// GetNewID returns a deterministic ID derived from the vector content (SHA256, base64url).
-func (s *Service) GetNewID(vector []float64) string {
-	buf := make([]byte, len(vector)*8) //nolint:mnd
+// GetNewID returns a deterministic ID scoped by group and vector content (SHA256, base64url).
+func (s *Service) GetNewID(group string, vector []float64) string {
+	buf := make([]byte, len(group)+1+len(vector)*float64Bytes)
+	offset := copy(buf, group)
+	offset++
 
 	for i, v := range vector {
-		binary.LittleEndian.PutUint64(buf[i*8:], math.Float64bits(v)) //nolint:mnd
+		binary.LittleEndian.PutUint64(buf[offset+i*float64Bytes:], math.Float64bits(v))
 	}
 
 	hash := sha256.Sum256(buf)
@@ -99,7 +104,7 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 		return "", ErrWrongDimension
 	}
 
-	bid := s.GetNewID(vector)
+	bid := s.GetNewID(group, vector)
 
 	existing, err := s.repo.GetRecords([]string{bid})
 	if err != nil {

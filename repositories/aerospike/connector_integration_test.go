@@ -28,6 +28,7 @@ func TestMain(m *testing.M) {
 
 	sharedClient = client
 	code := m.Run()
+
 	client.Close()
 	os.Exit(code)
 }
@@ -247,6 +248,7 @@ func TestDedupUpsert_Integration(t *testing.T) {
 
 	// Simulate: novel item stores record + representatives
 	bins := map[string]any{"i": "maxim@weavers.team", "g": "email", "s": []uint64{1, 2, 3}}
+
 	err := repo.SaveRecord("id1", bins)
 	if err != nil {
 		t.Fatalf("SaveRecord: %v", err)

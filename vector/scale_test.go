@@ -75,7 +75,7 @@ func TestScale_RecordSize(t *testing.T) {
 	}
 
 	bins := Record{
-		ID:        svc.GetNewID(vec),
+		ID:        svc.GetNewID("test-group", vec),
 		Vector:    vec,
 		GroupID:   "test-group",
 		Signature: make([]uint64, sigSize),
@@ -374,7 +374,7 @@ func TestScale_PrecisionGuarantee(t *testing.T) {
 			}
 
 			// Check if this was resolved (noisy vector ID != representative ID)
-			noisyID := svc.GetNewID(noisyVec)
+			noisyID := svc.GetNewID("grp", noisyVec)
 			if noisyID == id {
 				continue // exact match, not a resolution
 			}

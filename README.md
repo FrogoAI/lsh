@@ -59,7 +59,7 @@ id2, _ := svc.Upsert(context.Background(), "group1", "the quick brown fox jumps"
 // id1 == id2 if Jaccard similarity >= threshold
 ```
 
-`Upsert` returns the ID of the matching existing record if a near-duplicate is found, or a new deterministic ID if the input is novel.
+`Upsert` returns the ID of the matching existing record if a near-duplicate is found, or a new deterministic ID if the input is novel. Record IDs are scoped by group: the same input in different groups produces different IDs. Buckets are also group-scoped via `HashVersion(group)`.
 
 ### Vector behavioural ID
 
@@ -155,7 +155,7 @@ Built-in implementations:
 ```
 Input (text or vector)
         |
-  1. Deterministic ID (SHA256)
+  1. Group-scoped deterministic ID (SHA256)
         |
   2. L1 cache: exact record lookup --> HIT: return ID
         |
@@ -177,7 +177,7 @@ Input (text or vector)
 
 ### Step by step
 
-1. **Deterministic ID** — The input is hashed (SHA256, truncated to 128 bits, base64url-encoded) to produce a `memberID`. Same input always produces the same ID.
+1. **Group-scoped deterministic ID** — The group and input are hashed together (SHA256, truncated to 128 bits, base64url-encoded) to produce a `memberID`. Same input in the same group always produces the same ID; same input in different groups produces different IDs. Buckets are independently scoped by `HashVersion(group)`.
 
 2. **L1 cache (record lookup)** — If a record with this ID already exists in storage, return it immediately. This handles exact duplicate inputs with zero LSH overhead.
 
@@ -326,7 +326,7 @@ When a bucket is at cap, new representatives are silently rejected (memory) or o
 
 ## API note: userID vs vector-derived ID
 
-The `behavioural_id` returned by `Upsert` is derived deterministically from the **vector content** (SHA256), not from a user identifier. This is intentional: the ID identifies a **behavior pattern**, not a user. Two different users with identical behavior vectors get the same `behavioural_id`.
+The `behavioural_id` returned by `Upsert` is derived deterministically from the **group and vector content** (SHA256), not from a user identifier. This is intentional: the ID identifies a **behavior pattern inside a group**, not a user. Two different users with identical behavior vectors in the same group get the same `behavioural_id`; the same vector in different groups gets different IDs.
 
 The consumer (scoring engine) maintains the `user -> behavioural_id` mapping externally by storing the returned ID on the enriched event.
 

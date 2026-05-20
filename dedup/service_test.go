@@ -290,6 +290,118 @@ func TestUpsert_DeterministicID(t *testing.T) {
 	}
 }
 
+func TestUpsert_GroupScopedIDsAndBuckets(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name        string
+		firstGroup  string
+		secondGroup string
+		input       string
+	}{
+		{name: "requested name fields", firstGroup: "first_name", secondGroup: "last_name", input: "Demian"},
+		{name: "same prefix groups", firstGroup: "name", secondGroup: "name_extra", input: "Demian"},
+		{name: "case sensitive groups", firstGroup: "last_name", secondGroup: "Last_Name", input: "Demian"},
+		{name: "empty first group", firstGroup: "", secondGroup: "last_name", input: "Demian"},
+		{name: "spaced input", firstGroup: "first_name", secondGroup: "last_name", input: "John Doe"},
+		{name: "long input", firstGroup: "first_name", secondGroup: "last_name", input: "maxim@weavers.team"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := memory.NewRepository()
+
+			svc, err := NewService(repo, defaultConfig())
+			if err != nil {
+				t.Fatalf("NewService: %v", err)
+			}
+
+			id1, err := svc.Upsert(ctx, tc.firstGroup, tc.input)
+			if err != nil {
+				t.Fatalf("first Upsert: %v", err)
+			}
+
+			id2, err := svc.Upsert(ctx, tc.secondGroup, tc.input)
+			if err != nil {
+				t.Fatalf("second Upsert: %v", err)
+			}
+
+			if id1 == id2 {
+				t.Fatalf("expected group-scoped IDs, got same ID %s", id1)
+			}
+
+			records, err := repo.GetRecords([]string{id1, id2})
+			if err != nil {
+				t.Fatalf("GetRecords: %v", err)
+			}
+
+			if len(records) != 2 {
+				t.Fatalf("expected both grouped records to be saved, got %d records", len(records))
+			}
+
+			bucketKeys := bucketKeysForInput(t, svc, tc.secondGroup, tc.input)
+
+			reps, err := repo.BatchGetRepresentatives(bucketKeys)
+			if err != nil {
+				t.Fatalf("BatchGetRepresentatives: %v", err)
+			}
+
+			for _, key := range bucketKeys {
+				if !hasRepresentative(reps[key], id2) {
+					t.Fatalf("expected second ID %s in bucket %s", id2, key)
+				}
+
+				if hasRepresentative(reps[key], id1) {
+					t.Fatalf("did not expect first group ID %s in second group bucket %s", id1, key)
+				}
+			}
+		})
+	}
+}
+
+func TestUpsert_GroupSimilarityRegression(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name  string
+		group string
+		left  string
+		right string
+	}{
+		{name: "requested last name", group: "last_name", left: "Demian", right: "Demianx"},
+		{name: "email typo", group: "email", left: "maxim@weavers.team", right: "maxim@weavets.team"},
+		{name: "extra character", group: "users", left: "John Doe", right: "Johnn Doe"},
+		{name: "suffix extension", group: "tokens", left: "abcdefghijkl", right: "abcdefghijklm"},
+		{name: "product suffix", group: "products", left: "FrogoAI", right: "FrogoAIx"},
+		{name: "domain suffix", group: "domains", left: "example.org", right: "example.orgx"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := memory.NewRepository()
+
+			svc, err := NewService(repo, defaultConfig())
+			if err != nil {
+				t.Fatalf("NewService: %v", err)
+			}
+
+			id1, err := svc.Upsert(ctx, tc.group, tc.left)
+			if err != nil {
+				t.Fatalf("first Upsert: %v", err)
+			}
+
+			id2, err := svc.Upsert(ctx, tc.group, tc.right)
+			if err != nil {
+				t.Fatalf("second Upsert: %v", err)
+			}
+
+			if id1 != id2 {
+				t.Fatalf("expected same ID inside group, got %s vs %s", id1, id2)
+			}
+		})
+	}
+}
+
 func BenchmarkUpsert(b *testing.B) {
 	ctx := context.Background()
 	cfg := &Config{
@@ -436,9 +548,10 @@ func TestGetNewID(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	id1 := svc.GetNewID(testHelloInput)
-	id2 := svc.GetNewID(testHelloInput)
-	id3 := svc.GetNewID("world")
+	id1 := svc.GetNewID(testGroupID, testHelloInput)
+	id2 := svc.GetNewID(testGroupID, testHelloInput)
+	id3 := svc.GetNewID(testGroupID, "world")
+	id4 := svc.GetNewID("other", testHelloInput)
 
 	if id1 != id2 {
 		t.Error("expected deterministic ID")
@@ -450,6 +563,10 @@ func TestGetNewID(t *testing.T) {
 
 	if id1 == "" {
 		t.Error("expected non-empty ID")
+	}
+
+	if id1 == id4 {
+		t.Error("expected different IDs for different groups")
 	}
 }
 
@@ -573,6 +690,40 @@ func TestUpsert_WithMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("l2 hit: %v", err)
 	}
+}
+
+func bucketKeysForInput(t *testing.T, svc *Service, group, input string) []string {
+	t.Helper()
+
+	inputTokens := Shingle(input, svc.config.ShingleSize)
+	if len(inputTokens) == 0 {
+		t.Fatal("expected non-empty shingles")
+	}
+
+	sig := make([]uint64, svc.config.SignatureSize())
+	svc.hasher.ComputeSignature(inputTokens, sig)
+
+	keys, err := lsh.ComputeBands(sig, svc.config.Bands, svc.config.Rows)
+	if err != nil {
+		t.Fatalf("ComputeBands: %v", err)
+	}
+
+	prefix, err := svc.getPrefix(group)
+	if err != nil {
+		t.Fatalf("getPrefix: %v", err)
+	}
+
+	return lsh.PrefixKeys(prefix, keys)
+}
+
+func hasRepresentative(reps []repositories.Representative, id string) bool {
+	for _, rep := range reps {
+		if rep.ID == id {
+			return true
+		}
+	}
+
+	return false
 }
 
 // spyRepository wraps memory.Repository for call counting.

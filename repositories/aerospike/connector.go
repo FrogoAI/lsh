@@ -335,7 +335,12 @@ func (r *Repository) GetRecords(keys []string) ([]repositories.Record, error) {
 
 	var result []repositories.Record
 
-	for i, rec := range records {
+	for i, key := range keys {
+		if i >= len(records) {
+			break
+		}
+
+		rec := records[i]
 		if rec == nil {
 			continue
 		}
@@ -345,7 +350,7 @@ func (r *Repository) GetRecords(keys []string) ([]repositories.Record, error) {
 			bins[k] = v
 		}
 
-		result = append(result, repositories.Record{Key: keys[i], Bins: bins})
+		result = append(result, repositories.Record{Key: key, Bins: bins})
 	}
 
 	return result, nil

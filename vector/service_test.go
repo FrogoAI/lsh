@@ -360,9 +360,10 @@ func TestGetNewID(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	id1 := svc.GetNewID([]float64{1.0, 2.0, 3.0})
-	id2 := svc.GetNewID([]float64{1.0, 2.0, 3.0})
-	id3 := svc.GetNewID([]float64{4.0, 5.0, 6.0})
+	id1 := svc.GetNewID("grp", []float64{1.0, 2.0, 3.0})
+	id2 := svc.GetNewID("grp", []float64{1.0, 2.0, 3.0})
+	id3 := svc.GetNewID("grp", []float64{4.0, 5.0, 6.0})
+	id4 := svc.GetNewID("other", []float64{1.0, 2.0, 3.0})
 
 	if id1 != id2 {
 		t.Error("expected deterministic ID")
@@ -374,6 +375,10 @@ func TestGetNewID(t *testing.T) {
 
 	if id1 == "" {
 		t.Error("expected non-empty ID")
+	}
+
+	if id1 == id4 {
+		t.Error("expected different IDs for different groups")
 	}
 }
 
