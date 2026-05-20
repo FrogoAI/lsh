@@ -84,7 +84,13 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 		return "", ErrEmptyInputString
 	}
 
+	prefix, err := s.getPrefix(group)
+	if err != nil {
+		return "", err
+	}
+
 	bid := s.GetNewID(input)
+	bid = prefix + ":" + bid
 
 	existing, err := s.repo.GetRecords([]string{bid})
 	if err != nil {
@@ -136,11 +142,6 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 	maxLen := int(float64(inputLen) / s.config.JaccardThreshold)
 
 	keys, err := lsh.ComputeBands(sig, s.config.Bands, s.config.Rows)
-	if err != nil {
-		return "", err
-	}
-
-	prefix, err := s.getPrefix(group)
 	if err != nil {
 		return "", err
 	}

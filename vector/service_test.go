@@ -288,6 +288,162 @@ func TestUpsert_ResolvedCache(t *testing.T) {
 	}
 }
 
+func TestUpsert_GroupScopedIDs(t *testing.T) {
+	ctx := context.Background()
+
+	newService := func(t *testing.T, repo repositories.Storage) *Service {
+		t.Helper()
+
+		cfg := vectorConfig(4)
+		cfg.CosineThreshold = 0.5
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			t.Fatalf("NewService: %v", err)
+		}
+
+		return svc
+	}
+
+	cases := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "same vector same group returns same id",
+			run: func(t *testing.T) {
+				svc := newService(t, memory.NewRepository())
+				vec := []float64{1.0, 2.0, 3.0, 4.0}
+
+				id1, err := svc.Upsert(ctx, "group-a", vec)
+				if err != nil {
+					t.Fatalf("first upsert: %v", err)
+				}
+
+				id2, err := svc.Upsert(ctx, "group-a", vec)
+				if err != nil {
+					t.Fatalf("second upsert: %v", err)
+				}
+
+				if id1 != id2 {
+					t.Errorf("expected same id in same group, got %s vs %s", id1, id2)
+				}
+			},
+		},
+		{
+			name: "same vector different groups returns different ids",
+			run: func(t *testing.T) {
+				svc := newService(t, memory.NewRepository())
+				vec := []float64{1.0, 2.0, 3.0, 4.0}
+
+				id1, err := svc.Upsert(ctx, "group-a", vec)
+				if err != nil {
+					t.Fatalf("group-a upsert: %v", err)
+				}
+
+				id2, err := svc.Upsert(ctx, "group-b", vec)
+				if err != nil {
+					t.Fatalf("group-b upsert: %v", err)
+				}
+
+				if id1 == id2 {
+					t.Errorf("expected different ids across groups, got %s", id1)
+				}
+			},
+		},
+		{
+			name: "similar vector same group resolves to representative",
+			run: func(t *testing.T) {
+				svc := newService(t, memory.NewRepository())
+
+				id1, err := svc.Upsert(ctx, "group-a", []float64{1.0, 2.0, 3.0, 4.0})
+				if err != nil {
+					t.Fatalf("original upsert: %v", err)
+				}
+
+				id2, err := svc.Upsert(ctx, "group-a", []float64{1.1, 2.1, 3.1, 4.1})
+				if err != nil {
+					t.Fatalf("similar upsert: %v", err)
+				}
+
+				if id1 != id2 {
+					t.Errorf("expected same id for similar vector in same group, got %s vs %s", id1, id2)
+				}
+			},
+		},
+		{
+			name: "similar vector different group does not reuse resolved cache",
+			run: func(t *testing.T) {
+				svc := newService(t, memory.NewRepository())
+
+				representativeID, err := svc.Upsert(ctx, "group-a", []float64{1.0, 2.0, 3.0, 4.0})
+				if err != nil {
+					t.Fatalf("original upsert: %v", err)
+				}
+
+				resolvedID, err := svc.Upsert(ctx, "group-a", []float64{1.1, 2.1, 3.1, 4.1})
+				if err != nil {
+					t.Fatalf("same-group similar upsert: %v", err)
+				}
+
+				if resolvedID != representativeID {
+					t.Fatalf("expected same-group similar vector to resolve to %s, got %s", representativeID, resolvedID)
+				}
+
+				otherGroupID, err := svc.Upsert(ctx, "group-b", []float64{1.1, 2.1, 3.1, 4.1})
+				if err != nil {
+					t.Fatalf("other-group similar upsert: %v", err)
+				}
+
+				if otherGroupID == representativeID {
+					t.Errorf("expected other group to avoid group-a resolved cache, got %s", otherGroupID)
+				}
+			},
+		},
+		{
+			name: "persisted l2 cache remains group scoped across restart",
+			run: func(t *testing.T) {
+				repo := memory.NewRepository()
+				svc1 := newService(t, repo)
+
+				representativeID, err := svc1.Upsert(ctx, "group-a", []float64{1.0, 2.0, 3.0, 4.0})
+				if err != nil {
+					t.Fatalf("original upsert: %v", err)
+				}
+
+				_, err = svc1.Upsert(ctx, "group-a", []float64{1.1, 2.1, 3.1, 4.1})
+				if err != nil {
+					t.Fatalf("similar upsert: %v", err)
+				}
+
+				svc2 := newService(t, repo)
+
+				resolvedID, err := svc2.Upsert(ctx, "group-a", []float64{1.1, 2.1, 3.1, 4.1})
+				if err != nil {
+					t.Fatalf("same-group restart upsert: %v", err)
+				}
+
+				if resolvedID != representativeID {
+					t.Fatalf("expected persisted same-group resolution %s, got %s", representativeID, resolvedID)
+				}
+
+				otherGroupID, err := svc2.Upsert(ctx, "group-b", []float64{1.1, 2.1, 3.1, 4.1})
+				if err != nil {
+					t.Fatalf("other-group restart upsert: %v", err)
+				}
+
+				if otherGroupID == representativeID {
+					t.Errorf("expected other group to avoid persisted group-a resolution, got %s", otherGroupID)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, tc.run)
+	}
+}
+
 func TestUpsert_L2CacheSurvivesPodRestart(t *testing.T) {
 	ctx := context.Background()
 	repo := memory.NewRepository()
@@ -423,6 +579,31 @@ func BenchmarkUpsert(b *testing.B) {
 		}
 	})
 
+	b.Run("DuplicateMatchDifferentGroups", func(b *testing.B) {
+		repo := memory.NewRepository()
+
+		svc, err := NewService(repo, vectorConfig(dims))
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		vec := make([]float64, dims)
+		for d := range vec {
+			vec[d] = float64(d) * 0.1
+		}
+
+		groups := []string{"grp-a", "grp-b", "grp-c", "grp-d", "grp-e", "grp-f", "grp-g", "grp-h"}
+		for _, group := range groups {
+			_, _ = svc.Upsert(ctx, group, vec)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, _ = svc.Upsert(ctx, groups[i%len(groups)], vec)
+		}
+	})
+
 	b.Run("SimilarMatch", func(b *testing.B) {
 		repo := memory.NewRepository()
 		cfg := vectorConfig(dims)
@@ -449,6 +630,37 @@ func BenchmarkUpsert(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			_, _ = svc.Upsert(ctx, "grp", vec2)
+		}
+	})
+
+	b.Run("SimilarMatchDifferentGroups", func(b *testing.B) {
+		repo := memory.NewRepository()
+		cfg := vectorConfig(dims)
+		cfg.CosineThreshold = 0.5
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		vec1 := make([]float64, dims)
+		vec2 := make([]float64, dims)
+
+		for d := range vec1 {
+			vec1[d] = float64(d) * 0.1
+			vec2[d] = float64(d)*0.1 + 0.01
+		}
+
+		groups := []string{"grp-a", "grp-b", "grp-c", "grp-d", "grp-e", "grp-f", "grp-g", "grp-h"}
+		for _, group := range groups {
+			_, _ = svc.Upsert(ctx, group, vec1)
+			_, _ = svc.Upsert(ctx, group, vec2)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, _ = svc.Upsert(ctx, groups[i%len(groups)], vec2)
 		}
 	})
 }

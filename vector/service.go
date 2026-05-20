@@ -99,7 +99,13 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 		return "", ErrWrongDimension
 	}
 
+	prefix, err := s.getPrefix(group)
+	if err != nil {
+		return "", err
+	}
+
 	bid := s.GetNewID(vector)
+	bid = prefix + ":" + bid
 
 	existing, err := s.repo.GetRecords([]string{bid})
 	if err != nil {
@@ -141,11 +147,6 @@ func (s *Service) Upsert(ctx context.Context, group string, vector []float64) (s
 	s.hasher.ComputeSignature(vector, sig)
 
 	keys, err := lsh.ComputeBands(sig, s.config.Bands, s.config.Rows)
-	if err != nil {
-		return "", err
-	}
-
-	prefix, err := s.getPrefix(group)
 	if err != nil {
 		return "", err
 	}
