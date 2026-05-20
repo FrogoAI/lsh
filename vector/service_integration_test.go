@@ -30,12 +30,13 @@ func TestMain(m *testing.M) {
 
 	sharedClient = client
 	code := m.Run()
+
 	client.Close()
 	os.Exit(code)
 }
 
-func aerospikeRepo(t *testing.T) *asrepo.Repository {
-	t.Helper()
+func aerospikeRepo(tb testing.TB) *asrepo.Repository {
+	tb.Helper()
 
 	return asrepo.NewRepository(sharedClient, testdata.Namespace, uniqueSet())
 }
@@ -57,6 +58,112 @@ func integrationConfig(dims int) *Config {
 		VectorDimensions: dims,
 		CosineThreshold:  0.7,
 	}
+}
+
+func benchmarkConfig(dims int) *Config {
+	return &Config{
+		Config: lsh.Config{
+			Bands: 20, Rows: 5,
+			MaxBucketSize: 200, MaxTotalCandidates: 100, Seed: 42,
+		},
+		VectorDimensions: dims,
+		CosineThreshold:  0.7,
+	}
+}
+
+func BenchmarkUpsertAerospike(b *testing.B) {
+	ctx := context.Background()
+	dims := 18
+
+	b.Run("NewRecord", func(b *testing.B) {
+		repo := aerospikeRepo(b)
+		cfg := benchmarkConfig(dims)
+		cfg.CosineThreshold = 0.99
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			vec := make([]float64, dims)
+			vec[0] = float64(i * 1000)
+			vec[1] = float64(i)
+
+			_, err = svc.Upsert(ctx, "grp", vec)
+			if err != nil {
+				b.Fatalf("Upsert: %v", err)
+			}
+		}
+	})
+
+	b.Run("DuplicateMatch", func(b *testing.B) {
+		repo := aerospikeRepo(b)
+
+		svc, err := NewService(repo, benchmarkConfig(dims))
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		vec := make([]float64, dims)
+		for d := range vec {
+			vec[d] = float64(d) * 0.1
+		}
+
+		_, err = svc.Upsert(ctx, "grp", vec)
+		if err != nil {
+			b.Fatalf("seed Upsert: %v", err)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, err = svc.Upsert(ctx, "grp", vec)
+			if err != nil {
+				b.Fatalf("Upsert: %v", err)
+			}
+		}
+	})
+
+	b.Run("SimilarMatch", func(b *testing.B) {
+		repo := aerospikeRepo(b)
+		cfg := benchmarkConfig(dims)
+		cfg.CosineThreshold = 0.5
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		vec1 := make([]float64, dims)
+		vec2 := make([]float64, dims)
+
+		for d := range vec1 {
+			vec1[d] = float64(d) * 0.1
+			vec2[d] = float64(d)*0.1 + 0.01
+		}
+
+		_, err = svc.Upsert(ctx, "grp", vec1)
+		if err != nil {
+			b.Fatalf("seed original Upsert: %v", err)
+		}
+
+		_, err = svc.Upsert(ctx, "grp", vec2)
+		if err != nil {
+			b.Fatalf("seed similar Upsert: %v", err)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, err = svc.Upsert(ctx, "grp", vec2)
+			if err != nil {
+				b.Fatalf("Upsert: %v", err)
+			}
+		}
+	})
 }
 
 func TestVectorUpsert_Aerospike(t *testing.T) {
@@ -272,6 +379,7 @@ func TestVectorUpsert_PrecisionGuarantee_Aerospike(t *testing.T) {
 		cos := ExactCosine(vec, rec.Vector)
 		if cos < cfg.CosineThreshold {
 			violations++
+
 			t.Errorf("PRECISION VIOLATION: cos=%.3f < %.1f", cos, cfg.CosineThreshold)
 		}
 	}

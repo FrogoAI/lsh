@@ -29,12 +29,13 @@ func TestMain(m *testing.M) {
 
 	sharedClient = client
 	code := m.Run()
+
 	client.Close()
 	os.Exit(code)
 }
 
-func aerospikeRepo(t *testing.T) *asrepo.Repository {
-	t.Helper()
+func aerospikeRepo(tb testing.TB) *asrepo.Repository {
+	tb.Helper()
 
 	return asrepo.NewRepository(sharedClient, testdata.Namespace, uniqueSet())
 }
@@ -56,6 +57,104 @@ func integrationConfig() *Config {
 		ShingleSize:      3,
 		JaccardThreshold: 0.6,
 	}
+}
+
+func benchmarkConfig() *Config {
+	return &Config{
+		Config: lsh.Config{
+			Bands: 20, Rows: 5,
+			MaxBucketSize: 100, MaxTotalCandidates: 100, Seed: 42,
+		},
+		ShingleSize:      3,
+		JaccardThreshold: 0.6,
+	}
+}
+
+func BenchmarkUpsertAerospike(b *testing.B) {
+	ctx := context.Background()
+	cfg := benchmarkConfig()
+
+	b.Run("NewRecord", func(b *testing.B) {
+		repo := aerospikeRepo(b)
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		for i := 0; i < 100; i++ {
+			_, err = svc.Upsert(ctx, "users", fmt.Sprintf("seed%d@gmail.com", i))
+			if err != nil {
+				b.Fatalf("seed Upsert: %v", err)
+			}
+		}
+
+		offset := 100000
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			input := fmt.Sprintf("bench_new_%d@example.com", offset+i)
+
+			_, err = svc.Upsert(ctx, "users", input)
+			if err != nil {
+				b.Fatalf("Upsert: %v", err)
+			}
+		}
+	})
+
+	b.Run("DuplicateMatch", func(b *testing.B) {
+		repo := aerospikeRepo(b)
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		target := "duplicate@example.com"
+
+		_, err = svc.Upsert(ctx, "users", target)
+		if err != nil {
+			b.Fatalf("seed Upsert: %v", err)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, err = svc.Upsert(ctx, "users", target)
+			if err != nil {
+				b.Fatalf("Upsert: %v", err)
+			}
+		}
+	})
+
+	b.Run("SimilarMatch", func(b *testing.B) {
+		repo := aerospikeRepo(b)
+
+		svc, err := NewService(repo, cfg)
+		if err != nil {
+			b.Fatalf("NewService: %v", err)
+		}
+
+		_, err = svc.Upsert(ctx, "users", "similar_original@example.com")
+		if err != nil {
+			b.Fatalf("seed original Upsert: %v", err)
+		}
+
+		_, err = svc.Upsert(ctx, "users", "similar_originak@example.com")
+		if err != nil {
+			b.Fatalf("seed similar Upsert: %v", err)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			_, err = svc.Upsert(ctx, "users", "similar_originak@example.com")
+			if err != nil {
+				b.Fatalf("Upsert: %v", err)
+			}
+		}
+	})
 }
 
 func TestDedupUpsert_Aerospike(t *testing.T) {
@@ -176,10 +275,12 @@ func TestDedupUpsert_MultipleGroups_Aerospike(t *testing.T) {
 	id1, _ := svc.Upsert(ctx, "org1", "John Doe")
 	id2, _ := svc.Upsert(ctx, "org2", "John Doe")
 
-	// Same input in different groups should be independent
-	// (they might get the same deterministic ID, but LSH runs independently)
 	if id1 == "" || id2 == "" {
 		t.Error("expected non-empty IDs")
+	}
+
+	if id1 == id2 {
+		t.Error("expected different IDs for the same input in different groups")
 	}
 }
 
@@ -233,6 +334,7 @@ func TestDedupUpsert_1000Strings_GroupValidation_Aerospike(t *testing.T) {
 		for i := 0; i < grp.count; i++ {
 			// Generate similar strings: small typos/variations
 			input := grp.prefix
+
 			switch i % 5 {
 			case 0:
 				input += "@gmail.com"

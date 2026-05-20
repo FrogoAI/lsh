@@ -56,8 +56,14 @@ func (s *Service) WithMetrics(m *lsh.Instruments) {
 	s.metrics = m
 }
 
-func (s *Service) GetNewID(input string) string {
-	hash := sha256.Sum256([]byte(input))
+// GetNewID returns a deterministic ID scoped by group and input content (SHA256, base64url).
+func (s *Service) GetNewID(group, input string) string {
+	buf := make([]byte, 0, len(group)+1+len(input))
+	buf = append(buf, group...)
+	buf = append(buf, 0)
+	buf = append(buf, input...)
+
+	hash := sha256.Sum256(buf)
 
 	return base64.RawURLEncoding.EncodeToString(hash[:16])
 }
@@ -84,7 +90,7 @@ func (s *Service) Upsert(ctx context.Context, group, input string) (string, erro
 		return "", ErrEmptyInputString
 	}
 
-	bid := s.GetNewID(input)
+	bid := s.GetNewID(group, input)
 
 	existing, err := s.repo.GetRecords([]string{bid})
 	if err != nil {
