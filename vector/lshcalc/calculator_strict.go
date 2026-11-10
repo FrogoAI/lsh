@@ -7,7 +7,7 @@ import (
 
 var (
 	ErrInvalidCosine               = errors.New("cosine must be between 0 and 1")
-	ErrInvalidMaxMissRate          = errors.New("max miss rate must be between 0 and 1")
+	ErrInvalidMaxMissRate          = errors.New("max miss probability must be between 0 and 1")
 	ErrInvalidVectorDimensions     = errors.New("vector dimensions must be positive")
 	ErrInvalidMaxBands             = errors.New("max bands must be positive")
 	ErrInvalidMaxRows              = errors.New("max rows must be positive")
