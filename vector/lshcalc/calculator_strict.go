@@ -34,7 +34,7 @@ func (r RequestStrict) Validate() error {
 		return ErrInvalidCosine
 	}
 
-	if r.MaxMissProbability <= 0 || r.MaxMissProbability >= 1 {
+	if r.MaxMissProbability <= 0 || r.MaxMissProbability > 1 {
 		return ErrInvalidMaxMissRate
 	}
 
@@ -50,11 +50,11 @@ func (r RequestStrict) Validate() error {
 		return ErrInvalidMaxRows
 	}
 
-	if r.MinBands <= 0 || r.MinBands >= r.MaxBands {
+	if r.MinBands <= 0 || r.MinBands > r.MaxBands {
 		return ErrInvalidMinBands
 	}
 
-	if r.MinRows <= 0 || r.MinRows >= r.MaxRows {
+	if r.MinRows <= 0 || r.MinRows > r.MaxRows {
 		return ErrInvalidMinRows
 	}
 

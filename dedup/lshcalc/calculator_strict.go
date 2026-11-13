@@ -34,7 +34,7 @@ func (r RequestStrict) Validate() error {
 		return ErrInvalidJaccard
 	}
 
-	if r.MaxMissProbability <= 0 || r.MaxMissProbability >= 1 {
+	if r.MaxMissProbability <= 0 || r.MaxMissProbability > 1 {
 		return ErrInvalidMaxMissRate
 	}
 
@@ -50,11 +50,11 @@ func (r RequestStrict) Validate() error {
 		return ErrInvalidMaxRows
 	}
 
-	if r.MinBands <= 0 || r.MinBands >= r.MaxBands {
+	if r.MinBands <= 0 || r.MinBands > r.MaxBands {
 		return ErrInvalidMinBands
 	}
 
-	if r.MinRows <= 0 || r.MinRows >= r.MaxRows {
+	if r.MinRows <= 0 || r.MinRows > r.MaxRows {
 		return ErrInvalidMinRows
 	}
 
@@ -66,7 +66,7 @@ func (r RequestStrict) Validate() error {
 }
 
 type ResultStrict struct {
-	VectorDimensions             int     `json:"vector_dimensions"`
+	ShingleSize                  int     `json:"shingle_size"`
 	Bands                        int     `json:"bands"`
 	Rows                         int     `json:"rows"`
 	SignatureSize                int     `json:"signature_size"`
@@ -98,7 +98,7 @@ func CalculateStrict(req RequestStrict) (ResultStrict, error) {
 			}
 
 			result := ResultStrict{
-				VectorDimensions:             req.ShingleSize,
+				ShingleSize:                  req.ShingleSize,
 				Bands:                        bands,
 				Rows:                         rows,
 				SignatureSize:                bands * rows,
